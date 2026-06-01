@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 敏感配置文件（包含密码）
+Log-Download/config.json
+
+# 下载目录
+Log-Download/downloads/
+
+# 日志文件
+Log-Download/*.log
+
+# 调试截图
+Log-Download/*.png
+
+# 下载记录
+Log-Download/downloaded_tasks.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 文档（可选）
+CLAUDE.md
+IDENTITY.md
