@@ -83,9 +83,65 @@ class LogDownloader:
 
         Returns:
             配置字典
+
+        Raises:
+            FileNotFoundError: 配置文件不存在
+            ValueError: 配置文件格式错误或缺少必需字段
         """
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        # 检查文件是否存在
+        config_abs_path = os.path.abspath(config_path)
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(
+                f"配置文件不存在: {config_abs_path}\n"
+                f"请确保 config.json 文件存在"
+            )
+
+        # 尝试加载并解析 JSON
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"配置文件格式错误: {config_abs_path}\n"
+                f"JSON 解析失败: {e}"
+            )
+
+        # 验证必需的配置字段
+        self._validate_config(config)
+
+        return config
+
+    def _validate_config(self, config: Dict) -> None:
+        """
+        验证配置文件的必需字段。
+
+        Args:
+            config: 配置字典
+
+        Raises:
+            ValueError: 缺少必需的配置字段
+        """
+        missing_fields = []
+
+        # 检查 LVTS 服务器配置
+        lvts = config.get("lvts_server", {})
+        if not lvts.get("url"):
+            missing_fields.append("lvts_server.url")
+        if not lvts.get("username"):
+            missing_fields.append("lvts_server.username")
+        if not lvts.get("password"):
+            missing_fields.append("lvts_server.password")
+
+        # 检查下载配置
+        download = config.get("download", {})
+        if not download.get("directory"):
+            missing_fields.append("download.directory")
+
+        if missing_fields:
+            raise ValueError(
+                f"配置文件缺少必需的字段:\n" +
+                "\n".join(f"  - {field}" for field in missing_fields)
+            )
 
     def _setup_logging(self):
         """设置日志配置"""
@@ -181,10 +237,10 @@ class LogDownloader:
             self.page.wait_for_selector("input", timeout=10000)
 
             # 填写用户名 - 查找第一个可见的文本输入框
-            username_input = self.page.query_selector(
+            username_input = self.page.locator(
                 'input[type="text"], input:not([type="password"])'
-            )
-            if username_input:
+            ).first
+            if username_input.count() > 0:
                 username_input.fill(username)
                 logging.info("已输入用户名")
             else:
@@ -192,8 +248,8 @@ class LogDownloader:
                 return False
 
             # 填写密码
-            password_input = self.page.query_selector('input[type="password"]')
-            if password_input:
+            password_input = self.page.locator('input[type="password"]').first
+            if password_input.count() > 0:
                 password_input.fill(password)
                 logging.info("已输入密码")
             else:
@@ -201,25 +257,35 @@ class LogDownloader:
                 return False
 
             # 点击登录按钮
-            login_button = self.page.query_selector(
+            login_button = self.page.locator(
                 'button:has-text("登录"), button[type="submit"], .el-button--primary'
             )
-            if login_button:
-                login_button.click()
+            if login_button.count() > 0:
+                login_button.first.click()
                 logging.info("已点击登录按钮")
             else:
                 logging.error("未找到登录按钮")
                 return False
 
-            # 等待页面跳转
-            self.page.wait_for_timeout(3000)
-
-            # 检查是否登录成功
-            login_button_still = self.page.query_selector('button:has-text("登录")')
-            if login_button_still and login_button_still.is_visible():
-                logging.error("登录失败,可能密码错误或账号无效")
-                self._save_screenshot("login_failed")
-                return False
+            # 等待登录成功后的特征元素出现 (最多等待15秒)
+            # 登录成功后通常会: 1) 登录按钮消失 2) 出现用户信息或任务列表
+            try:
+                # 等待登录按钮消失或任务表格出现
+                success_indicator = self.page.locator(
+                    'table tbody tr, .el-table__body-wrapper tbody tr, '
+                    '.task-item, [class*="task-row"], .user-info, [class*="user-name"]'
+                ).first
+                success_indicator.wait_for(state="visible", timeout=15000)
+                logging.info("检测到登录成功特征: 页面内容已加载")
+            except Exception as e:
+                # 如果超时，再检查登录按钮是否仍然可见
+                login_button = self.page.locator('button:has-text("登录")')
+                login_button_visible = login_button.count() > 0 and login_button.first.is_visible()
+                if login_button_visible:
+                    logging.error(f"登录失败: 等待页面加载超时 - {e}")
+                    self._save_screenshot("login_failed")
+                    return False
+                # 登录按钮已消失但特征元素未出现，继续执行
 
             logging.info("登录成功")
             return True
@@ -242,8 +308,9 @@ class LogDownloader:
         try:
             logging.info("验证任务列表页面")
 
-            # 等待页面加载完成
-            self.page.wait_for_timeout(2000)
+            # 等待网络请求完成或短暂稳定
+            self.page.wait_for_load_state("networkidle", timeout=10000)
+            self.page.wait_for_timeout(500)  # 额外等待UI渲染完成
 
             # 检查是否存在任务表格
             if self._is_task_list_page():
@@ -332,13 +399,12 @@ class LogDownloader:
                         task_id = self._extract_task_id(row, idx)
                         task_name = self._extract_task_name(row, idx)
 
+                        # 不存储页面元素引用，改用行索引，在使用时重新获取
                         tasks.append(
                             {
                                 "id": task_id,
                                 "name": task_name,
-                                "index": idx,
-                                "row_element": row,
-                                "download_button": download_btn,
+                                "row_index": idx,  # 使用索引而非元素引用
                             }
                         )
 
@@ -426,10 +492,10 @@ class LogDownloader:
         """
         下载单个任务的日志文件。
 
-        根据实际页面结构:
-        1. 勾选任务行的复选框
-        2. 点击操作列的按钮 (弹出下拉菜单)
-        3. 从下拉菜单中选择"下载日志"
+        实际下载流程:
+        1. 尝试勾选任务行的复选框 (可选操作)
+        2. 右键点击任务行 (弹出上下文菜单)
+        3. 从右键菜单中选择"下载日志"
 
         Args:
             task: 任务信息字典
@@ -441,16 +507,27 @@ class LogDownloader:
 
         try:
             task_id = task["id"]
+            task_name = task.get("name", task_id)
             logging.info(f"正在下载任务日志: {task_id}")
 
-            row = task.get("row_element")
-            if not row:
-                logging.error(f"任务 {task_id} 没有行元素")
+            # 使用行索引重新获取页面元素
+            row_index = task.get("row_index")
+            if row_index is None:
+                logging.error(f"任务 {task_id} 没有行索引")
                 return False
 
+            # 重新获取任务行元素
+            row = self.page.locator(".el-table__body-wrapper tbody tr").nth(row_index)
+            if row.count() == 0:
+                # 尝试备用选择器
+                row = self.page.locator("table tbody tr").nth(row_index)
+                if row.count() == 0:
+                    logging.error(f"任务 {task_id} 行元素未找到 (索引: {row_index})")
+                    self._save_screenshot(f"row_not_found_{task_id}")
+                    return False
+
             # 步骤 1: 强制关闭可能存在的弹窗
-            logging.info(f"检查并关闭可能的弹窗")
-            time.sleep(0.5)
+            logging.info("检查并关闭可能的弹窗")
             try:
                 # 使用 JavaScript 强制移除弹窗
                 self.page.evaluate("""
@@ -466,16 +543,14 @@ class LogDownloader:
                         });
                     }
                 """)
-                time.sleep(0.3)
-                logging.info("已强制关闭弹窗")
+                logging.debug("已强制关闭弹窗")
             except Exception as e:
                 logging.warning(f"关闭弹窗失败: {e}")
 
             # 尝试按 ESC 键关闭弹窗
             try:
                 self.page.keyboard.press("Escape")
-                time.sleep(0.3)
-                logging.info("已按 ESC 键")
+                logging.debug("已按 ESC 键")
             except Exception:
                 pass
 
@@ -486,7 +561,8 @@ class LogDownloader:
                 if checkbox.count() > 0:
                     if not checkbox.is_checked():
                         checkbox.click()
-                        time.sleep(0.5)
+                        # 等待复选框状态更新
+                        self.page.wait_for_timeout(300)
                         logging.info("已勾选复选框")
                     else:
                         logging.info("复选框已勾选")
@@ -495,7 +571,7 @@ class LogDownloader:
                     first_cell = row.locator("td:first-child").first
                     if first_cell.count() > 0:
                         first_cell.click()
-                        time.sleep(0.5)
+                        self.page.wait_for_timeout(300)
                         logging.info("已点击第一列勾选")
             except Exception as e:
                 logging.warning(f"勾选复选框失败: {e}")
@@ -505,9 +581,16 @@ class LogDownloader:
             try:
                 # 使用右键点击触发上下文菜单
                 row.click(button="right")
-                # 等待菜单渲染
-                time.sleep(1)
-                logging.info("已右键点击,等待菜单渲染")
+                # 等待菜单出现 (最多等待3秒)
+                try:
+                    self.page.locator('li.ivu-dropdown-item:has-text("下载日志")').wait_for(
+                        state="visible", timeout=3000
+                    )
+                    logging.info("已右键点击,菜单已渲染")
+                except Exception:
+                    # 如果菜单选择器不对，至少等待一小段时间
+                    self.page.wait_for_timeout(500)
+                    logging.debug("等待菜单渲染完成")
             except Exception as e:
                 logging.error(f"右键点击失败: {e}")
                 return False
@@ -515,9 +598,8 @@ class LogDownloader:
             # 截图查看菜单是否出现
             self._save_screenshot(f"after_right_click_{task_id}")
 
-            # 步骤 4: 从下拉菜单中选择"下载日志"
-            logging.info(f"选择下载日志菜单")
-            time.sleep(0.5)
+            # 步骤 4: 从右键菜单中选择"下载日志"
+            logging.info("选择下载日志菜单")
             try:
                 # 根据实际 HTML 结构: <li class="ivu-dropdown-item">下载日志</li>
                 download_menu_item = self.page.locator('li.ivu-dropdown-item:has-text("下载日志")').first
@@ -538,7 +620,8 @@ class LogDownloader:
 
                     # 生成文件名 (保留原始扩展名)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    new_filename = f"{task['id']}_{timestamp}{original_ext}"
+                    safe_task_id = self._sanitize_filename(str(task['id']))
+                    new_filename = f"{safe_task_id}_{timestamp}{original_ext}"
                     new_file_path = os.path.join(self.download_dir, new_filename)
 
                     # 如果目标文件已存在,添加序号
@@ -554,7 +637,29 @@ class LogDownloader:
                     logging.info(f"文件已保存: {new_file_path}")
 
                     downloaded_file = new_file_path
-                    time.sleep(1)
+
+                    # 截图保存下载后的页面状态 (在验证之前)
+                    self._save_screenshot(f"after_download_click_{task_id}")
+
+                    # 步骤 5: 等待并处理确认对话框 (如果有)
+                    try:
+                        confirm_btn = self.page.locator(
+                            '.ivu-modal-footer button:has-text("确定"), '
+                            '.ivu-btn-primary:has-text("确定")'
+                        ).first
+                        if confirm_btn.count() > 0 and confirm_btn.is_visible():
+                            logging.info("检测到确认对话框,点击确定按钮")
+                            confirm_btn.click()
+                    except Exception as e:
+                        logging.debug(f"未检测到确认对话框或点击失败: {e}")
+
+                    # 验证文件完整性
+                    if self.verify_file_integrity(downloaded_file):
+                        logging.info(f"任务 [{task_name}] 下载成功")
+                        return True
+                    else:
+                        logging.error(f"任务 [{task_name}] 下载的文件验证失败")
+                        return False
                 else:
                     logging.error("未找到下载日志菜单项")
                     self._save_screenshot(f"no_download_menu_{task_id}")
@@ -562,32 +667,6 @@ class LogDownloader:
             except Exception as e:
                 logging.error(f"选择下载日志菜单失败: {e}")
                 self._save_screenshot(f"download_menu_error_{task_id}")
-                return False
-
-            # 截图保存操作后的页面状态
-            self._save_screenshot(f"after_download_click_{task_id}")
-
-            if not downloaded_file:
-                logging.error(f"任务 {task_id} 下载失败,未捕获到下载事件")
-                return False
-
-            # 步骤 5: 等待确认对话框 (如果有)
-            time.sleep(1)
-            try:
-                confirm_btn = self.page.locator('.ivu-modal-footer button:has-text("确定"), .ivu-btn-primary:has-text("确定")').first
-                if confirm_btn.count() > 0 and confirm_btn.is_visible():
-                    logging.info(f"检测到确认对话框,点击确定按钮")
-                    confirm_btn.click()
-                    time.sleep(1)
-            except Exception as e:
-                logging.info(f"未检测到确认对话框: {e}")
-
-            # 验证文件完整性
-            if self.verify_file_integrity(downloaded_file):
-                logging.info(f"任务 {task_id} 下载成功")
-                return True
-            else:
-                logging.error(f"任务 {task_id} 下载的文件验证失败")
                 return False
 
         except Exception as e:
@@ -649,7 +728,7 @@ class LogDownloader:
         """
         downloaded = set()
 
-        # 从下载记录文件加载
+        # 从下载记录文件加载 (优先)
         if os.path.exists(self.record_file):
             try:
                 with open(self.record_file, "r", encoding="utf-8") as f:
@@ -663,11 +742,12 @@ class LogDownloader:
             except Exception as e:
                 logging.warning(f"读取下载记录文件失败: {e}")
 
-        # 从下载目录扫描补充
+        # 从下载目录扫描 (仅补充记录文件未包含的)
         try:
             for filename in os.listdir(self.download_dir):
                 task_id = self._extract_task_id_from_filename(filename)
-                if task_id:
+                # 只添加记录文件中不存在的任务ID，避免重复计数
+                if task_id and task_id not in downloaded:
                     downloaded.add(task_id)
             logging.debug(f"从下载目录扫描到 {len(downloaded)} 个已下载任务")
         except Exception as e:
@@ -882,6 +962,26 @@ class LogDownloader:
         finally:
             logging.info("调度器已停止")
 
+    def _sanitize_filename(self, filename: str) -> str:
+        """
+        清理文件名,移除或替换非法字符。
+
+        Args:
+            filename: 原始文件名
+
+        Returns:
+            清理后的文件名
+        """
+        # 替换Windows文件名的非法字符
+        illegal_chars = r'[<>:"/\\|?*]'
+        sanitized = re.sub(illegal_chars, '_', filename)
+        # 移除控制字符
+        sanitized = re.sub(r'[\x00-\x1f\x7f]', '', sanitized)
+        # 限制长度 (Windows路径最长260字符,保留足够空间)
+        if len(sanitized) > 200:
+            sanitized = sanitized[:200]
+        return sanitized
+
     def _save_screenshot(self, name: str):
         """
         保存页面截图。
@@ -891,8 +991,10 @@ class LogDownloader:
         """
         try:
             if self.page:
+                # 清理文件名
+                safe_name = self._sanitize_filename(name)
                 screenshot_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), f"{name}.png"
+                    os.path.dirname(os.path.abspath(__file__)), f"{safe_name}.png"
                 )
                 self.page.screenshot(path=screenshot_path)
                 logging.info(f"已保存截图: {screenshot_path}")
