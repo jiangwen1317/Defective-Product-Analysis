@@ -29,7 +29,6 @@ import os
 import re
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Set
 from playwright.sync_api import sync_playwright, Page, Browser
 
@@ -462,9 +461,9 @@ class LogDownloader:
                 logging.info("任务列表页面已加载")
                 return True
             else:
-                logging.warning("未检测到任务列表表格,但继续执行")
+                logging.error("未检测到任务列表表格")
                 self._save_screenshot("task_list_verify")
-                return True
+                return False
 
         except Exception as e:
             logging.error(f"验证任务列表页面失败: {e}")
