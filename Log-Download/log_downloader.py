@@ -34,6 +34,82 @@ from typing import Dict, List, Optional, Set
 from playwright.sync_api import sync_playwright, Page, Browser
 
 
+class LoginStatus:
+    """登录状态枚举"""
+    SUCCESS = "success"           # 登录成功
+    FAILED = "failed"             # 登录失败
+    TIMEOUT = "timeout"           # 等待超时
+    UNKNOWN = "unknown"           # 未知状态
+
+
+class Selectors:
+    """UI 选择器常量"""
+    # 任务表格行选择器（按优先级排序）
+    TABLE_ROWS = [
+        ".el-table__body-wrapper tbody tr",
+        "table tbody tr",
+    ]
+
+    # 下载按钮选择器
+    DOWNLOAD_BUTTON = [
+        'button:has-text("下载日志")',
+        'button:has-text("下载")',
+        ".el-button--text:has-text('下载')",
+        "td:last-child button:last-child",
+    ]
+
+    # 登录相关选择器
+    USERNAME_INPUT = ['input[type="text"]', 'input:not([type="password"])']
+    PASSWORD_INPUT = 'input[type="password"]'
+    LOGIN_BUTTON = [
+        'button:has-text("登录")',
+        'button:has-text("登 录")',
+        'button[type="submit"]',
+        '.el-button--primary:has-text("登录")',
+        '[class*="login"] button',
+    ]
+
+    # 登录成功后的特征元素
+    LOGIN_SUCCESS = [
+        ".el-table__body-wrapper tbody tr",
+        "table tbody tr",
+        ".el-table__empty-text",
+        ".user-info",
+        "[class*='user-name']",
+        "[class*='username']",
+        ".el-aside",
+    ]
+
+    # 任务列表页面特征
+    TASK_LIST_PAGE = [
+        "table tbody tr",
+        ".task-item",
+        "[class*='task-row']",
+        ".el-table",
+        "table",
+    ]
+
+    # 下载菜单项
+    DOWNLOAD_MENU = 'li.ivu-dropdown-item:has-text("下载日志")'
+
+    # 确认对话框按钮
+    CONFIRM_BUTTON = [
+        '.ivu-modal-footer button:has-text("确定")',
+        '.ivu-btn-primary:has-text("确定")',
+    ]
+
+
+class Timeout:
+    """超时时间常量（毫秒）"""
+    FORM_WAIT = 10_000      # 等待表单加载
+    LOGIN_WAIT = 15_000     # 等待登录成功
+    NETWORK_IDLE = 10_000   # 等待网络空闲
+    MENU_RENDER = 3_000     # 等待菜单渲染
+    DOWNLOAD_WAIT = 60_000  # 等待下载完成
+    UI_RENDER = 500         # UI 渲染等待
+    CHECKBOX_UPDATE = 300   # 复选框更新等待
+
+
 class LogDownloader:
     """LVTS 日志下载器"""
 
@@ -49,6 +125,9 @@ class LogDownloader:
         self.page: Optional[Page] = None
         self.playwright = None
 
+        # 缓存脚本所在目录（避免重复计算）
+        self._script_dir = os.path.dirname(os.path.abspath(__file__))
+
         # 从配置中提取常用配置
         self.lvts_config = self.config.get("lvts_server", {})
         self.download_config = self.config.get("download", {})
@@ -58,18 +137,14 @@ class LogDownloader:
         # 设置下载目录 (支持相对路径和绝对路径)
         download_dir = self.download_config.get("directory", "downloads")
         if not os.path.isabs(download_dir):
-            # 相对路径基于脚本所在目录
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            download_dir = os.path.join(script_dir, download_dir)
+            download_dir = os.path.join(self._script_dir, download_dir)
         self.download_dir = download_dir
 
         # 确保下载目录存在
         os.makedirs(self.download_dir, exist_ok=True)
 
         # 下载记录文件路径
-        self.record_file = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "downloaded_tasks.txt"
-        )
+        self.record_file = os.path.join(self._script_dir, "downloaded_tasks.txt")
 
         # 设置日志
         self._setup_logging()
@@ -149,10 +224,9 @@ class LogDownloader:
         log_level = getattr(logging, log_config.get("level", "INFO"))
         log_file = log_config.get("file", "log_downloader.log")
 
-        # 如果 log_file 是相对路径,转换为绝对路径
+        # 相对路径转换为绝对路径
         if not os.path.isabs(log_file):
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            log_file = os.path.join(script_dir, log_file)
+            log_file = os.path.join(self._script_dir, log_file)
 
         logging.basicConfig(
             level=log_level,
@@ -234,66 +308,143 @@ class LogDownloader:
             self.page.goto(url, wait_until="networkidle")
 
             # 等待登录表单加载
-            self.page.wait_for_selector("input", timeout=10000)
+            self.page.wait_for_selector("input", timeout=Timeout.FORM_WAIT)
 
-            # 填写用户名 - 查找第一个可见的文本输入框
-            username_input = self.page.locator(
-                'input[type="text"], input:not([type="password"])'
-            ).first
-            if username_input.count() > 0:
-                username_input.fill(username)
+            # 填写用户名
+            username_locator = self.page.locator(", ".join(Selectors.USERNAME_INPUT))
+            if username_locator.count() > 0:
+                username_locator.first.fill(username)
                 logging.info("已输入用户名")
             else:
                 logging.error("未找到用户名输入框")
                 return False
 
             # 填写密码
-            password_input = self.page.locator('input[type="password"]').first
-            if password_input.count() > 0:
-                password_input.fill(password)
+            password_locator = self.page.locator(Selectors.PASSWORD_INPUT)
+            if password_locator.count() > 0:
+                password_locator.first.fill(password)
                 logging.info("已输入密码")
             else:
                 logging.error("未找到密码输入框")
                 return False
 
             # 点击登录按钮
-            login_button = self.page.locator(
-                'button:has-text("登录"), button[type="submit"], .el-button--primary'
-            )
-            if login_button.count() > 0:
+            login_button_locators = [self.page.locator(sel) for sel in Selectors.LOGIN_BUTTON]
+            login_button = next((loc for loc in login_button_locators if loc.count() > 0), None)
+            if login_button:
                 login_button.first.click()
                 logging.info("已点击登录按钮")
             else:
                 logging.error("未找到登录按钮")
                 return False
 
-            # 等待登录成功后的特征元素出现 (最多等待15秒)
-            # 登录成功后通常会: 1) 登录按钮消失 2) 出现用户信息或任务列表
-            try:
-                # 等待登录按钮消失或任务表格出现
-                success_indicator = self.page.locator(
-                    'table tbody tr, .el-table__body-wrapper tbody tr, '
-                    '.task-item, [class*="task-row"], .user-info, [class*="user-name"]'
-                ).first
-                success_indicator.wait_for(state="visible", timeout=15000)
-                logging.info("检测到登录成功特征: 页面内容已加载")
-            except Exception as e:
-                # 如果超时，再检查登录按钮是否仍然可见
-                login_button = self.page.locator('button:has-text("登录")')
-                login_button_visible = login_button.count() > 0 and login_button.first.is_visible()
-                if login_button_visible:
-                    logging.error(f"登录失败: 等待页面加载超时 - {e}")
-                    self._save_screenshot("login_failed")
-                    return False
-                # 登录按钮已消失但特征元素未出现，继续执行
+            # 等待登录成功
+            login_status = self._wait_for_login_success()
 
-            logging.info("登录成功")
-            return True
+            if login_status == LoginStatus.SUCCESS:
+                logging.info("登录成功")
+                return True
+            else:
+                # FAILED、TIMEOUT、UNKNOWN 都视为失败
+                error_msg = {
+                    LoginStatus.FAILED: "登录按钮仍然可见或页面异常",
+                    LoginStatus.TIMEOUT: "等待页面加载超时",
+                    LoginStatus.UNKNOWN: "登录状态未知",
+                }.get(login_status, "未知错误")
+                logging.error(f"登录失败: {error_msg}")
+                self._save_screenshot(f"login_failed_{login_status}")
+                return False
 
         except Exception as e:
             logging.error(f"登录失败: {e}")
             self._save_screenshot("login_error")
             return False
+
+    def _wait_for_login_success(self, timeout: int = 15000) -> str:
+        """
+        等待并验证登录成功。
+
+        验证策略：
+        1. 登录按钮消失（必要条件）
+        2. 出现任务列表或其他成功特征（充分条件）
+
+        Args:
+            timeout: 单次等待超时（毫秒），总超时限制为 timeout * 1.5
+
+        Returns:
+            LoginStatus: 登录状态
+        """
+        start_time = time.time()
+        max_total_timeout = int(timeout * 1.5)  # 总超时限制为 timeout 的 1.5 倍
+
+        # 步骤 1: 等待登录按钮消失
+        logging.debug("等待登录按钮消失...")
+
+        login_button_locator = None
+        for selector in Selectors.LOGIN_BUTTON:
+            locator = self.page.locator(selector)
+            if locator.count() > 0:
+                login_button_locator = locator
+                break
+
+        if login_button_locator:
+            remaining = max_total_timeout - int((time.time() - start_time) * 1000)
+            if remaining <= 0:
+                return LoginStatus.TIMEOUT
+
+            try:
+                login_button_locator.wait_for(state="hidden", timeout=remaining)
+                elapsed = (time.time() - start_time) * 1000
+                logging.debug(f"登录按钮已消失 (耗时 {elapsed:.0f}ms)")
+            except Exception:
+                if login_button_locator.is_visible():
+                    logging.warning("登录按钮仍然可见，登录可能失败")
+                    return LoginStatus.FAILED
+
+        # 步骤 2: 遍历成功特征选择器，等待任一元素出现
+        logging.debug("等待成功特征元素出现...")
+
+        for selector in Selectors.LOGIN_SUCCESS:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            # 检查总超时
+            if elapsed_ms >= max_total_timeout:
+                logging.warning(f"总超时限制已达 ({max_total_timeout}ms)")
+                break
+
+            locator = self.page.locator(selector)
+            if locator.count() == 0:
+                continue  # 元素不存在，继续检查下一个选择器
+
+            # 元素存在，等待它变为可见
+            try:
+                remaining = max_total_timeout - elapsed_ms
+                locator.wait_for(state="visible", timeout=min(timeout // 2, remaining))
+                logging.debug(f"检测到成功特征: {selector}")
+                return LoginStatus.SUCCESS
+            except Exception:
+                # 等待失败，继续检查下一个选择器
+                continue
+
+        # 步骤 3: 检查 URL 是否离开登录页
+        current_url = self.page.url
+        logging.debug(f"当前 URL: {current_url}")
+        login_page_indicators = ["/login", "/signin", "/enter"]
+        if not any(ind in current_url.lower() for ind in login_page_indicators):
+            logging.info("URL 已离开登录页，登录可能成功")
+            return LoginStatus.SUCCESS
+
+        # 步骤 4: 快速检测（不再等待，只检查元素是否已存在且可见）
+        for selector in Selectors.LOGIN_SUCCESS:
+            locator = self.page.locator(selector)
+            if locator.count() > 0 and locator.is_visible():
+                logging.debug(f"检测到成功特征: {selector}")
+                return LoginStatus.SUCCESS
+
+        # 返回超时状态
+        elapsed = (time.time() - start_time) * 1000
+        logging.warning(f"未能在 {elapsed:.0f}ms 内检测到登录成功特征")
+        return LoginStatus.TIMEOUT
 
     def navigate_to_task_list(self) -> bool:
         """
@@ -307,19 +458,16 @@ class LogDownloader:
         """
         try:
             logging.info("验证任务列表页面")
+            self.page.wait_for_load_state("networkidle", timeout=Timeout.NETWORK_IDLE)
+            self.page.wait_for_timeout(Timeout.UI_RENDER)
 
-            # 等待网络请求完成或短暂稳定
-            self.page.wait_for_load_state("networkidle", timeout=10000)
-            self.page.wait_for_timeout(500)  # 额外等待UI渲染完成
-
-            # 检查是否存在任务表格
             if self._is_task_list_page():
                 logging.info("任务列表页面已加载")
                 return True
             else:
                 logging.warning("未检测到任务列表表格,但继续执行")
                 self._save_screenshot("task_list_verify")
-                return True  # 不中断流程
+                return True
 
         except Exception as e:
             logging.error(f"验证任务列表页面失败: {e}")
@@ -327,35 +475,15 @@ class LogDownloader:
             return False
 
     def _is_task_list_page(self) -> bool:
-        """
-        检查当前页面是否是任务列表页面。
-
-        Returns:
-            如果是任务列表页面返回 True,否则返回 False
-        """
-        # 检查是否存在表格或任务列表元素
-        task_list_indicators = [
-            "table tbody tr",
-            ".task-item",
-            "[class*='task-row']",
-            ".el-table",
-            "table",
-        ]
-
-        for selector in task_list_indicators:
-            if self.page.locator(selector).first.count() > 0:
-                return True
-
-        return False
+        """检查当前页面是否是任务列表页面。"""
+        return any(
+            self.page.locator(sel).count() > 0
+            for sel in Selectors.TASK_LIST_PAGE
+        )
 
     def scan_downloadable_tasks(self) -> List[Dict]:
         """
         扫描任务列表,识别所有可下载的任务。
-
-        根据实际页面结构:
-        - 任务列表是表格形式
-        - 每行任务的"操作"列包含"详情"和"下载日志"按钮
-        - 直接点击"下载日志"按钮即可触发下载
 
         Returns:
             可下载任务列表,每个任务包含 id、name 等信息
@@ -365,54 +493,40 @@ class LogDownloader:
         try:
             logging.info("正在扫描可下载的任务")
 
-            # 查找所有任务行 (Element UI 表格结构)
-            task_rows = self.page.locator(".el-table__body-wrapper tbody tr").all()
-
-            if not task_rows:
-                # 备用选择器
-                task_rows = self.page.locator("table tbody tr").all()
+            # 查找所有任务行
+            task_rows = []
+            for selector in Selectors.TABLE_ROWS:
+                task_rows = self.page.locator(selector).all()
+                if task_rows:
+                    break
 
             logging.info(f"找到 {len(task_rows)} 个任务行")
 
             for idx, row in enumerate(task_rows):
                 try:
-                    # 查找"下载日志"按钮
-                    download_btn = None
+                    # 查找下载按钮
+                    download_btn_locator = None
+                    used_selector = None
 
-                    # 尝试多种选择器
-                    download_selectors = [
-                        'button:has-text("下载日志")',
-                        'button:has-text("下载")',
-                        ".el-button--text:has-text('下载')",
-                        "td:last-child button:last-child",  # 操作列的最后一个按钮
-                    ]
-
-                    for selector in download_selectors:
-                        btn = row.locator(selector).first
-                        if btn.count() > 0 and btn.is_visible():
-                            download_btn = btn
-                            logging.debug(f"使用选择器 {selector} 找到下载按钮")
+                    for selector in Selectors.DOWNLOAD_BUTTON:
+                        btn_locator = row.locator(selector)
+                        if btn_locator.count() > 0 and btn_locator.first.is_visible():
+                            download_btn_locator = btn_locator
+                            used_selector = selector
                             break
 
-                    if download_btn:
-                        # 提取任务信息
+                    if download_btn_locator:
                         task_id = self._extract_task_id(row, idx)
                         task_name = self._extract_task_name(row, idx)
 
-                        # 不存储页面元素引用，改用行索引，在使用时重新获取
-                        tasks.append(
-                            {
-                                "id": task_id,
-                                "name": task_name,
-                                "row_index": idx,  # 使用索引而非元素引用
-                            }
-                        )
-
-                        logging.info(f"发现可下载任务: {task_id} - {task_name}")
+                        tasks.append({
+                            "id": task_id,
+                            "name": task_name,
+                        })
+                        logging.debug(f"使用选择器 {used_selector} 找到任务: {task_id}")
 
                 except Exception as e:
                     logging.warning(f"解析任务行 {idx} 时出错: {e}")
-                    continue
 
             logging.info(f"扫描完成,找到 {len(tasks)} 个可下载任务")
             return tasks
@@ -421,6 +535,28 @@ class LogDownloader:
             logging.error(f"扫描任务列表失败: {e}")
             self._save_screenshot("scan_tasks_error")
             return []
+
+    def _find_task_row(self, task_id: str):
+        """通过任务 ID 在页面中查找对应的行元素。
+
+        Args:
+            task_id: 任务 ID
+
+        Returns:
+            匹配的行 Locator，如果未找到则返回 None
+        """
+        for selector in Selectors.TABLE_ROWS:
+            rows = self.page.locator(selector).all()
+            for row in rows:
+                try:
+                    cell_locator = row.locator("td:nth-child(2)")
+                    if cell_locator.count() > 0:
+                        cell_text = cell_locator.first.inner_text().strip()
+                        if cell_text == task_id:
+                            return row
+                except Exception:
+                    continue
+        return None
 
     def _extract_task_id(self, row, row_index: int) -> str:
         """
@@ -444,9 +580,9 @@ class LogDownloader:
 
         for selector in id_selectors:
             try:
-                cell = row.locator(selector).first
-                if cell.count() > 0:
-                    task_id = cell.inner_text().strip()
+                cell_locator = row.locator(selector)
+                if cell_locator.count() > 0:
+                    task_id = cell_locator.first.inner_text().strip()
                     if task_id and task_id.isdigit():  # ID 通常是数字
                         return task_id
             except Exception:
@@ -477,9 +613,9 @@ class LogDownloader:
 
         for selector in name_selectors:
             try:
-                cell = row.locator(selector).first
-                if cell.count() > 0:
-                    task_name = cell.inner_text().strip()
+                cell_locator = row.locator(selector)
+                if cell_locator.count() > 0:
+                    task_name = cell_locator.first.inner_text().strip()
                     if task_name:
                         return task_name
             except Exception:
@@ -492,8 +628,8 @@ class LogDownloader:
         """
         下载单个任务的日志文件。
 
-        实际下载流程:
-        1. 尝试勾选任务行的复选框 (可选操作)
+        下载流程:
+        1. 勾选任务行的复选框
         2. 右键点击任务行 (弹出上下文菜单)
         3. 从右键菜单中选择"下载日志"
 
@@ -503,157 +639,93 @@ class LogDownloader:
         Returns:
             下载成功返回 True,否则返回 False
         """
-        downloaded_file = None  # 初始化变量，避免未定义错误
+        downloaded_file = None
 
         try:
             task_id = task["id"]
             task_name = task.get("name", task_id)
             logging.info(f"正在下载任务日志: {task_id}")
 
-            # 使用行索引重新获取页面元素
-            row_index = task.get("row_index")
-            if row_index is None:
-                logging.error(f"任务 {task_id} 没有行索引")
+            # 通过任务 ID 查找行元素（不再依赖行索引）
+            row = self._find_task_row(task_id)
+            if not row:
+                logging.error(f"任务 {task_id} 行元素未找到")
+                self._save_screenshot(f"row_not_found_{task_id}")
                 return False
 
-            # 重新获取任务行元素
-            row = self.page.locator(".el-table__body-wrapper tbody tr").nth(row_index)
-            if row.count() == 0:
-                # 尝试备用选择器
-                row = self.page.locator("table tbody tr").nth(row_index)
-                if row.count() == 0:
-                    logging.error(f"任务 {task_id} 行元素未找到 (索引: {row_index})")
-                    self._save_screenshot(f"row_not_found_{task_id}")
-                    return False
+            logging.debug(f"开始下载任务 {task_id}")
 
-            # 步骤 1: 强制关闭可能存在的弹窗
-            logging.info("检查并关闭可能的弹窗")
-            try:
-                # 使用 JavaScript 强制移除弹窗
-                self.page.evaluate("""
-                    () => {
-                        // 移除所有弹窗
-                        document.querySelectorAll('.ivu-modal-wrap, .ivu-modal-mask, [class*="modal"]').forEach(el => {
-                            el.style.display = 'none';
-                            el.remove();
-                        });
-                        // 移除遮罩层
-                        document.querySelectorAll('.v-transfer-dom').forEach(el => {
-                            el.style.display = 'none';
-                        });
-                    }
-                """)
-                logging.debug("已强制关闭弹窗")
-            except Exception as e:
-                logging.warning(f"关闭弹窗失败: {e}")
+            # 步骤 1: 关闭可能存在的弹窗
+            self._close_modals()
 
-            # 尝试按 ESC 键关闭弹窗
-            try:
-                self.page.keyboard.press("Escape")
-                logging.debug("已按 ESC 键")
-            except Exception:
-                pass
-
-            # 步骤 2: 勾选任务行的复选框
+            # 步骤 2: 勾选复选框
             logging.info(f"勾选任务 {task_id} 的复选框")
             try:
-                checkbox = row.locator("input[type='checkbox']").first
-                if checkbox.count() > 0:
-                    if not checkbox.is_checked():
-                        checkbox.click()
-                        # 等待复选框状态更新
-                        self.page.wait_for_timeout(300)
-                        logging.info("已勾选复选框")
-                    else:
-                        logging.info("复选框已勾选")
+                checkbox_locator = row.locator("input[type='checkbox']")
+                if checkbox_locator.count() > 0:
+                    if not checkbox_locator.first.is_checked():
+                        checkbox_locator.first.click()
+                        self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
+                    logging.info("已勾选复选框")
                 else:
-                    # 尝试点击第一列来勾选
-                    first_cell = row.locator("td:first-child").first
-                    if first_cell.count() > 0:
-                        first_cell.click()
-                        self.page.wait_for_timeout(300)
-                        logging.info("已点击第一列勾选")
+                    first_cell_locator = row.locator("td:first-child")
+                    if first_cell_locator.count() > 0:
+                        first_cell_locator.first.click()
+                        self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
             except Exception as e:
                 logging.warning(f"勾选复选框失败: {e}")
 
-            # 步骤 3: 右键点击任务行 (弹出上下文菜单)
+            # 步骤 3: 右键点击任务行
             logging.info(f"右键点击任务 {task_id} 的行")
             try:
-                # 使用右键点击触发上下文菜单
                 row.click(button="right")
-                # 等待菜单出现 (最多等待3秒)
+                # 首先尝试等待菜单出现
                 try:
-                    self.page.locator('li.ivu-dropdown-item:has-text("下载日志")').wait_for(
-                        state="visible", timeout=3000
+                    self.page.locator(Selectors.DOWNLOAD_MENU).wait_for(
+                        state="visible", timeout=Timeout.MENU_RENDER
                     )
-                    logging.info("已右键点击,菜单已渲染")
+                    logging.info("已右键点击,菜单已出现")
                 except Exception:
-                    # 如果菜单选择器不对，至少等待一小段时间
-                    self.page.wait_for_timeout(500)
-                    logging.debug("等待菜单渲染完成")
+                    # 如果等待失败，添加固定等待作为后备
+                    self.page.wait_for_timeout(1000)
+                    logging.debug("菜单等待超时，使用固定等待")
             except Exception as e:
                 logging.error(f"右键点击失败: {e}")
+                self._save_screenshot(f"right_click_failed_{task_id}")
                 return False
 
-            # 截图查看菜单是否出现
             self._save_screenshot(f"after_right_click_{task_id}")
 
-            # 步骤 4: 从右键菜单中选择"下载日志"
+            # 步骤 4: 选择下载日志菜单
             logging.info("选择下载日志菜单")
             try:
-                # 根据实际 HTML 结构: <li class="ivu-dropdown-item">下载日志</li>
-                download_menu_item = self.page.locator('li.ivu-dropdown-item:has-text("下载日志")').first
+                download_menu_locator = self.page.locator(Selectors.DOWNLOAD_MENU)
 
-                if download_menu_item.count() > 0 and download_menu_item.is_visible():
-                    # 在点击下载菜单项之前设置下载监听
-                    with self.page.expect_download(timeout=60000) as download_info:
-                        download_menu_item.click()
+                if download_menu_locator.count() > 0 and download_menu_locator.first.is_visible():
+                    with self.page.expect_download(timeout=Timeout.DOWNLOAD_WAIT) as download_info:
+                        download_menu_locator.first.click()
                         logging.info("已点击下载日志菜单,等待下载...")
 
-                    # 获取下载对象
                     download = download_info.value
                     original_filename = download.suggested_filename
                     logging.info(f"捕获到下载事件: {original_filename}")
 
-                    # 获取原始文件的扩展名
+                    # 生成新文件名
                     _, original_ext = os.path.splitext(original_filename)
-
-                    # 生成文件名 (保留原始扩展名)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     safe_task_id = self._sanitize_filename(str(task['id']))
                     new_filename = f"{safe_task_id}_{timestamp}{original_ext}"
-                    new_file_path = os.path.join(self.download_dir, new_filename)
-
-                    # 如果目标文件已存在,添加序号
-                    if os.path.exists(new_file_path):
-                        base, ext = os.path.splitext(new_filename)
-                        counter = 1
-                        while os.path.exists(new_file_path):
-                            new_filename = f"{base}_{counter}{ext}"
-                            new_file_path = os.path.join(self.download_dir, new_filename)
-                            counter += 1
+                    new_file_path = self._get_unique_filepath(new_filename)
 
                     download.save_as(new_file_path)
                     logging.info(f"文件已保存: {new_file_path}")
 
                     downloaded_file = new_file_path
-
-                    # 截图保存下载后的页面状态 (在验证之前)
                     self._save_screenshot(f"after_download_click_{task_id}")
 
-                    # 步骤 5: 等待并处理确认对话框 (如果有)
-                    try:
-                        confirm_btn = self.page.locator(
-                            '.ivu-modal-footer button:has-text("确定"), '
-                            '.ivu-btn-primary:has-text("确定")'
-                        ).first
-                        if confirm_btn.count() > 0 and confirm_btn.is_visible():
-                            logging.info("检测到确认对话框,点击确定按钮")
-                            confirm_btn.click()
-                    except Exception as e:
-                        logging.debug(f"未检测到确认对话框或点击失败: {e}")
+                    # 处理确认对话框
+                    self._handle_confirm_dialog()
 
-                    # 验证文件完整性
                     if self.verify_file_integrity(downloaded_file):
                         logging.info(f"任务 [{task_name}] 下载成功")
                         return True
@@ -674,23 +746,49 @@ class LogDownloader:
             self._save_screenshot(f"download_error_{task.get('id', 'unknown')}")
             return False
 
-    def _generate_filename(self, task: Dict) -> str:
-        """
-        生成下载文件名。
+    def _close_modals(self):
+        """关闭可能存在的弹窗（不影响 dropdown 组件）"""
+        try:
+            self.page.evaluate("""
+                () => {
+                    // 只隐藏明确的弹窗遮罩，不删除 DOM 节点
+                    // 注意: 不能移除 .v-transfer-dom，它是 iView dropdown 的容器
+                    document.querySelectorAll('.ivu-modal-wrap, .ivu-modal-mask')
+                        .forEach(el => { el.style.display = 'none'; });
+                }
+            """)
+        except Exception as e:
+            logging.debug(f"关闭弹窗失败: {e}")
 
-        Args:
-            task: 任务信息字典
+        try:
+            self.page.keyboard.press("Escape")
+        except Exception:
+            pass
 
-        Returns:
-            文件名字符串
-        """
-        task_id = task["id"]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pattern = self.download_config.get(
-            "filename_pattern", "{task_id}_{timestamp}.log"
-        )
+    def _get_unique_filepath(self, filename: str) -> str:
+        """生成唯一的文件路径，避免文件名冲突"""
+        file_path = os.path.join(self.download_dir, filename)
+        if not os.path.exists(file_path):
+            return file_path
 
-        return pattern.format(task_id=task_id, timestamp=timestamp)
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(file_path):
+            file_path = os.path.join(self.download_dir, f"{base}_{counter}{ext}")
+            counter += 1
+        return file_path
+
+    def _handle_confirm_dialog(self):
+        """处理确认对话框"""
+        try:
+            for selector in Selectors.CONFIRM_BUTTON:
+                btn_locator = self.page.locator(selector)
+                if btn_locator.count() > 0 and btn_locator.first.is_visible():
+                    btn_locator.first.click()
+                    logging.debug("已点击确认按钮")
+                    break
+        except Exception:
+            pass
 
     def verify_file_integrity(self, file_path: str) -> bool:
         """
@@ -779,10 +877,24 @@ class LogDownloader:
         Returns:
             任务 ID,如果无法提取则返回 None
         """
-        # 假设文件名格式: {task_id}_{timestamp}.log
+        # 文件名格式: {task_id}_{YYYYMMDD}_{HHMMSS}.{ext}
+        # task_id 可以是纯数字或包含下划线的字符串（如 task_row_5）
+        # 使用非贪婪匹配，确保提取的是时间戳之前的部分
         match = re.match(r"^(.+?)_\d{8}_\d{6}\.", filename)
         if match:
             return match.group(1)
+
+        # 备用方案：尝试匹配 task_row_{数字} 格式
+        match = re.match(r"^(task_row_\d+)_", filename)
+        if match:
+            return match.group(1)
+
+        # 备用方案：尝试匹配纯数字 ID
+        match = re.match(r"^(\d+)_", filename)
+        if match:
+            return match.group(1)
+
+        logging.debug(f"无法从文件名提取任务 ID: {filename}")
         return None
 
     def filter_pending_tasks(self, tasks: List[Dict]) -> List[Dict]:
@@ -983,19 +1095,11 @@ class LogDownloader:
         return sanitized
 
     def _save_screenshot(self, name: str):
-        """
-        保存页面截图。
-
-        Args:
-            name: 截图文件名 (不含扩展名)
-        """
+        """保存页面截图。"""
         try:
             if self.page:
-                # 清理文件名
                 safe_name = self._sanitize_filename(name)
-                screenshot_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), f"{safe_name}.png"
-                )
+                screenshot_path = os.path.join(self._script_dir, f"{safe_name}.png")
                 self.page.screenshot(path=screenshot_path)
                 logging.info(f"已保存截图: {screenshot_path}")
         except Exception as e:
