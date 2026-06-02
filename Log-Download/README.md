@@ -21,7 +21,9 @@ playwright install chromium
     "username": "your_username",
     "password": "your_password"
   },
-  ...
+  "download": {
+    "directory": "downloads"
+  }
 }
 ```
 
@@ -29,12 +31,12 @@ playwright install chromium
 - `lvts_server.url`: LVTS 服务器地址 (任务列表页面 URL)
 - `lvts_server.username`: 登录用户名
 - `lvts_server.password`: 登录密码
+- `download.directory`: 下载目录 (支持绝对路径或相对路径)
 
-**可选配置项:**
-- `download.directory`: 下载目录 (默认: downloads)
-- `scheduler.interval_hours`: 执行间隔小时数 (默认: 1)
-- `scheduler.retry_count`: 重试次数 (默认: 3)
-- `browser.headless`: 是否隐藏浏览器 (默认: true)
+**说明:**
+- `download.directory` 支持两种格式:
+  - 相对路径: `"downloads"` (相对于脚本所在目录)
+  - 绝对路径: `"D:\\logs\\lvts"` 或 `"/home/user/logs/lvts"`
 
 ### 3. 运行
 
@@ -120,7 +122,6 @@ Log-Download/
 
 - 默认重试 3 次
 - 每次重试间隔 30 秒
-- 可在配置文件中调整重试参数
 
 ### 日志记录
 
@@ -155,9 +156,11 @@ A: 检查以下几点:
 
 ### Q: 如何调整下载间隔?
 
-A: 两种方法:
-1. 修改 `config.json` 中的 `scheduler.interval_hours`
-2. 运行时使用 `--interval` 参数覆盖配置
+A: 使用 `--interval` 参数:
+```bash
+python log_downloader.py --interval 2   # 每 2 小时执行一次
+python log_downloader.py --interval 0.5 # 每 30 分钟执行一次
+```
 
 ### Q: 如何清空下载记录重新下载?
 

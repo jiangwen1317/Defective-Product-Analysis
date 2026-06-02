@@ -13,7 +13,7 @@ LVTS 日志定时下载器
 - 完善的错误处理和日志记录
 
 使用方法:
-  python log_downloader.py              # 定时模式 (使用配置文件中的间隔)
+  python log_downloader.py              # 定时模式 (默认间隔 1 小时)
   python log_downloader.py --once       # 单次执行模式
   python log_downloader.py --visible    # 显示浏览器窗口 (调试用)
   python log_downloader.py --interval 2 # 设置执行间隔为 2 小时
@@ -128,11 +128,12 @@ class LogDownloader:
         # 缓存脚本所在目录（避免重复计算）
         self._script_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # 从配置中提取常用配置
+        # 从配置中提取核心配置
         self.lvts_config = self.config.get("lvts_server", {})
         self.download_config = self.config.get("download", {})
-        self.scheduler_config = self.config.get("scheduler", {})
-        self.browser_config = self.config.get("browser", {})
+
+        # 浏览器设置 (可通过命令行参数覆盖)
+        self.headless = True  # 默认无头模式
 
         # 设置下载目录 (支持相对路径和绝对路径)
         download_dir = self.download_config.get("directory", "downloads")
@@ -198,7 +199,7 @@ class LogDownloader:
         """
         missing_fields = []
 
-        # 检查 LVTS 服务器配置
+        # 检查 LVTS 服务器配置 (核心必需)
         lvts = config.get("lvts_server", {})
         if not lvts.get("url"):
             missing_fields.append("lvts_server.url")
@@ -207,7 +208,7 @@ class LogDownloader:
         if not lvts.get("password"):
             missing_fields.append("lvts_server.password")
 
-        # 检查下载配置
+        # 检查下载目录配置 (核心必需)
         download = config.get("download", {})
         if not download.get("directory"):
             missing_fields.append("download.directory")
@@ -219,10 +220,10 @@ class LogDownloader:
             )
 
     def _setup_logging(self):
-        """设置日志配置"""
-        log_config = self.config.get("log", {})
-        log_level = getattr(logging, log_config.get("level", "INFO"))
-        log_file = log_config.get("file", "log_downloader.log")
+        """设置日志配置 (使用硬编码默认值)"""
+        # 硬编码日志配置
+        log_level = logging.INFO
+        log_file = "log_downloader.log"
 
         # 相对路径转换为绝对路径
         if not os.path.isabs(log_file):
@@ -246,26 +247,22 @@ class LogDownloader:
         """
         self.playwright = sync_playwright().start()
 
-        # 配置下载目录
+        # 硬编码浏览器配置
         download_dir_abs = os.path.abspath(self.download_dir)
 
         self.browser = self.playwright.chromium.launch(
             headless=headless,
-            channel=self.browser_config.get("channel", "chrome"),
+            channel="chrome",
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
 
-        # 创建上下文并配置下载目录
+        # 创建上下文
         context = self.browser.new_context(
             accept_downloads=True,
-            viewport=self.browser_config.get("viewport", {"width": 1920, "height": 1080}),
-            # 设置下载目录
-            # 注意: Playwright 的 set_download_behavior 需要在创建 context 后调用
+            viewport={"width": 1920, "height": 1080},
         )
 
-        # 配置下载行为
         context.set_default_timeout(60000)
-
         self.page = context.new_page()
 
         logging.info(f"浏览器初始化完成,下载目录: {download_dir_abs}")
@@ -922,15 +919,15 @@ class LogDownloader:
 
         Args:
             task: 任务信息
-            max_retries: 最大重试次数,默认使用配置文件中的值
+            max_retries: 最大重试次数,默认 3 次
 
         Returns:
             下载成功返回 True,否则返回 False
         """
         if max_retries is None:
-            max_retries = self.scheduler_config.get("retry_count", 3)
+            max_retries = 3  # 默认重试 3 次
 
-        retry_delay = self.scheduler_config.get("retry_delay_seconds", 30)
+        retry_delay = 30  # 默认重试间隔 30 秒
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -963,8 +960,7 @@ class LogDownloader:
 
         try:
             # 初始化浏览器
-            headless = self.browser_config.get("headless", True)
-            self._init_browser(headless=headless)
+            self._init_browser(headless=self.headless)
 
             # 登录
             if not self.login():
@@ -1015,10 +1011,10 @@ class LogDownloader:
         启动定时调度器。
 
         Args:
-            interval_hours: 执行间隔 (小时),默认使用配置文件中的值
+            interval_hours: 执行间隔 (小时),默认 1 小时
         """
         if interval_hours is None:
-            interval_hours = self.scheduler_config.get("interval_hours", 1)
+            interval_hours = 1  # 默认 1 小时
 
         interval_seconds = interval_hours * 3600
 
@@ -1115,7 +1111,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python log_downloader.py              # 定时模式 (使用配置文件中的间隔)
+  python log_downloader.py              # 定时模式 (默认间隔 1 小时)
   python log_downloader.py --once       # 单次执行模式
   python log_downloader.py --visible    # 显示浏览器窗口 (调试用)
   python log_downloader.py --interval 2 # 设置执行间隔为 2 小时
@@ -1134,7 +1130,7 @@ def main():
     parser.add_argument(
         "--interval",
         type=float,
-        help="执行间隔 (小时),覆盖配置文件中的设置",
+        help="执行间隔 (小时),默认 1 小时",
     )
 
     args = parser.parse_args()
@@ -1144,7 +1140,7 @@ def main():
 
     # 覆盖浏览器可见性设置
     if args.visible:
-        downloader.browser_config["headless"] = False
+        downloader.headless = False
 
     # 覆盖间隔设置
     interval = args.interval
