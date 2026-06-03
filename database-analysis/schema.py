@@ -32,6 +32,21 @@ CREATE TABLE IF NOT EXISTS test_summary (
     overall_result      TEXT,
     fail_sections       TEXT,
 
+    -- 设备扩展信息
+    controller          TEXT,
+    capacity_mb         INTEGER,
+    capacity_sectors    INTEGER,       -- 扇区数 (如 122224640)
+    part_number         TEXT,
+    task_link           TEXT,
+
+    -- 测试参数
+    test_cycle          INTEGER DEFAULT 0,
+    test_case           INTEGER DEFAULT 0,
+
+    -- 最终结果
+    rtms_result         TEXT,
+    rtms_code           TEXT,
+
     -- Wear 关键指标（冗余，高频查询用）
     wai                 REAL,
     slc_pe_min          INTEGER,
@@ -51,6 +66,11 @@ CREATE_SUMMARY_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_summary_fw_version    ON test_summary(fw_version);",
     "CREATE INDEX IF NOT EXISTS idx_summary_overall_result ON test_summary(overall_result);",
     "CREATE INDEX IF NOT EXISTS idx_summary_parsed_at     ON test_summary(parsed_at);",
+    "CREATE INDEX IF NOT EXISTS idx_summary_controller    ON test_summary(controller);",
+    "CREATE INDEX IF NOT EXISTS idx_summary_rtms_result   ON test_summary(rtms_result);",
+    "CREATE INDEX IF NOT EXISTS idx_summary_flash_id      ON test_summary(flash_id);",
+    "CREATE INDEX IF NOT EXISTS idx_summary_capacity_mb   ON test_summary(capacity_mb);",
+    "CREATE INDEX IF NOT EXISTS idx_summary_capacity_sectors ON test_summary(capacity_sectors);",
 ]
 
 # ============================================================
@@ -116,8 +136,56 @@ CREATE_PROCESS_LOG_INDEXES = [
 ]
 
 
+# ============================================================
+# 迁移：为已有表添加缺失列
+# ============================================================
+_MIGRATE_SUMMARY_COLUMNS = [
+    ("controller",         "TEXT"),
+    ("capacity_mb",        "INTEGER"),
+    ("capacity_sectors",   "INTEGER"),
+    ("part_number",        "TEXT"),
+    ("task_link",          "TEXT"),
+    ("test_cycle",         "INTEGER DEFAULT 0"),
+    ("test_case",          "INTEGER DEFAULT 0"),
+    ("rtms_result",        "TEXT"),
+    ("rtms_code",          "TEXT"),
+]
+
+
+def _migrate(conn: "sqlite3.Connection") -> None:
+    """为已有表添加缺失列（幂等操作）。
+
+    通过 PRAGMA table_info 检查现有列，仅 ALTER TABLE 添加缺失列。
+
+    Args:
+        conn: 已打开的 SQLite 连接。
+    """
+    cursor = conn.cursor()
+
+    # 检查 test_summary 表是否存在
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='test_summary';"
+    )
+    if cursor.fetchone() is None:
+        return  # 表不存在，init_database 的 CREATE TABLE 会创建
+
+    # 获取现有列名
+    cursor.execute("PRAGMA table_info(test_summary);")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    # 添加缺失列
+    for col_name, col_type in _MIGRATE_SUMMARY_COLUMNS:
+        if col_name not in existing_columns:
+            cursor.execute(
+                f"ALTER TABLE test_summary ADD COLUMN {col_name} {col_type};"
+            )
+
+
 def init_database(conn: "sqlite3.Connection") -> None:
     """在给定连接上执行全部建表与建索引语句。
+
+    包含自动迁移：如果旧版数据库已存在 test_summary 表但缺少新增列，
+    会自动通过 ALTER TABLE 补充。
 
     Args:
         conn: 已打开的 SQLite 连接。
@@ -128,7 +196,10 @@ def init_database(conn: "sqlite3.Connection") -> None:
     cursor.execute("PRAGMA journal_mode=WAL;")
     cursor.execute("PRAGMA foreign_keys=ON;")
 
-    # 建表
+    # 迁移：为旧表补充缺失列
+    _migrate(conn)
+
+    # 建表（IF NOT EXISTS，旧库已迁移、新库直接创建）
     cursor.execute(CREATE_TEST_SUMMARY)
     cursor.execute(CREATE_TEST_METRICS)
     cursor.execute(CREATE_PROCESS_LOG)

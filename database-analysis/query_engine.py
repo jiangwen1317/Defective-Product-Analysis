@@ -32,10 +32,14 @@ class QueryEngine:
         *,
         device_name: Optional[str] = None,
         fw_version: Optional[str] = None,
+        flash_id: Optional[str] = None,
         section: Optional[str] = None,
         metric_key: Optional[str] = None,
         metric_keys: Optional[list[str]] = None,
         overall_result: Optional[str] = None,
+        capacity_mb: Optional[int] = None,
+        capacity_sectors: Optional[int] = None,
+        controller: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 100,
@@ -47,10 +51,14 @@ class QueryEngine:
         Args:
             device_name: 设备名过滤。
             fw_version: 固件版本过滤。
+            flash_id: Flash ID 精确查询。
             section: Section 名过滤。
             metric_key: 单个指标名过滤。
             metric_keys: 多个指标名过滤（IN 查询）。
             overall_result: 综合结果过滤（Pass/Fail）。
+            capacity_mb: 容量 MB 过滤。
+            capacity_sectors: 扇区数过滤。
+            controller: 主控型号过滤。
             date_from: 起始日期（YYYY-MM-DD）。
             date_to: 截止日期（YYYY-MM-DD）。
             limit: 返回条数上限。
@@ -63,7 +71,11 @@ class QueryEngine:
                 conn,
                 device_name=device_name,
                 fw_version=fw_version,
+                flash_id=flash_id,
                 overall_result=overall_result,
+                capacity_mb=capacity_mb,
+                capacity_sectors=capacity_sectors,
+                controller=controller,
                 date_from=date_from,
                 date_to=date_to,
                 limit=limit,
@@ -110,7 +122,11 @@ class QueryEngine:
         *,
         device_name: Optional[str] = None,
         fw_version: Optional[str] = None,
+        flash_id: Optional[str] = None,
         overall_result: Optional[str] = None,
+        capacity_mb: Optional[int] = None,
+        capacity_sectors: Optional[int] = None,
+        controller: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 100,
@@ -120,7 +136,11 @@ class QueryEngine:
         Args:
             device_name: 设备名过滤。
             fw_version: 固件版本过滤。
+            flash_id: Flash ID 精确查询。
             overall_result: 综合结果过滤。
+            capacity_mb: 容量 MB 过滤。
+            capacity_sectors: 扇区数过滤。
+            controller: 主控型号过滤。
             date_from: 起始日期。
             date_to: 截止日期。
             limit: 返回条数上限。
@@ -133,7 +153,11 @@ class QueryEngine:
                 conn,
                 device_name=device_name,
                 fw_version=fw_version,
+                flash_id=flash_id,
                 overall_result=overall_result,
+                capacity_mb=capacity_mb,
+                capacity_sectors=capacity_sectors,
+                controller=controller,
                 date_from=date_from,
                 date_to=date_to,
                 limit=limit,

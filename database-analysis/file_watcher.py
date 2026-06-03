@@ -247,6 +247,15 @@ class FileWatcher:
                         tlc_pe_max=result.tlc_pe_max,
                         increase_bad_block=result.increase_bad_block,
                         parse_status=result.status,
+                        controller=result.controller,
+                        capacity_mb=result.capacity_mb,
+                        capacity_sectors=result.capacity_sectors,
+                        part_number=result.part_number,
+                        task_link=result.task_link,
+                        test_cycle=result.test_cycle,
+                        test_case=result.test_case,
+                        rtms_result=result.rtms_result,
+                        rtms_code=result.rtms_code,
                     )
 
                     metric_tuples = [m.as_tuple() for m in result.metrics]

@@ -67,6 +67,15 @@ class MetricsRepository:
         cycles: int = 0,
         overall_result: Optional[str] = None,
         fail_sections: Optional[str] = None,
+        controller: Optional[str] = None,
+        capacity_mb: Optional[int] = None,
+        capacity_sectors: Optional[int] = None,
+        part_number: Optional[str] = None,
+        task_link: Optional[str] = None,
+        test_cycle: int = 0,
+        test_case: int = 0,
+        rtms_result: Optional[str] = None,
+        rtms_code: Optional[str] = None,
         wai: Optional[float] = None,
         slc_pe_min: Optional[int] = None,
         slc_pe_max: Optional[int] = None,
@@ -91,15 +100,19 @@ class MetricsRepository:
                 device_name, device_tool_name, device_config_name,
                 fw_version, mp_tool_version, flash_id, original_bad_block,
                 cycles, overall_result, fail_sections,
+                controller, capacity_mb, capacity_sectors, part_number, task_link,
+                test_cycle, test_case, rtms_result, rtms_code,
                 wai, slc_pe_min, slc_pe_max, tlc_pe_min, tlc_pe_max,
                 increase_bad_block, parse_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 file_name, file_path, file_size, file_mtime,
                 device_name, device_tool_name, device_config_name,
                 fw_version, mp_tool_version, flash_id, original_bad_block,
                 cycles, overall_result, fail_sections,
+                controller, capacity_mb, capacity_sectors, part_number, task_link,
+                test_cycle, test_case, rtms_result, rtms_code,
                 wai, slc_pe_min, slc_pe_max, tlc_pe_min, tlc_pe_max,
                 increase_bad_block, parse_status,
             ),
@@ -173,7 +186,11 @@ class MetricsRepository:
         *,
         device_name: Optional[str] = None,
         fw_version: Optional[str] = None,
+        flash_id: Optional[str] = None,
         overall_result: Optional[str] = None,
+        capacity_mb: Optional[int] = None,
+        capacity_sectors: Optional[int] = None,
+        controller: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 100,
@@ -185,7 +202,11 @@ class MetricsRepository:
             conn: 数据库连接。
             device_name: 按设备名过滤。
             fw_version: 按固件版本过滤。
+            flash_id: 按 Flash ID 精确查询。
             overall_result: 按综合结果过滤（Pass/Fail）。
+            capacity_mb: 按容量 MB 过滤。
+            capacity_sectors: 按扇区数过滤。
+            controller: 按主控型号过滤。
             date_from: 起始日期（YYYY-MM-DD）。
             date_to: 截止日期（YYYY-MM-DD）。
             limit: 返回条数上限。
@@ -203,9 +224,21 @@ class MetricsRepository:
         if fw_version:
             sql += " AND fw_version = ?"
             params.append(fw_version)
+        if flash_id:
+            sql += " AND flash_id = ?"
+            params.append(flash_id)
         if overall_result:
             sql += " AND overall_result = ?"
             params.append(overall_result)
+        if capacity_mb is not None:
+            sql += " AND capacity_mb = ?"
+            params.append(capacity_mb)
+        if capacity_sectors is not None:
+            sql += " AND capacity_sectors = ?"
+            params.append(capacity_sectors)
+        if controller:
+            sql += " AND controller = ?"
+            params.append(controller)
         if date_from:
             sql += " AND parsed_at >= ?"
             params.append(date_from)

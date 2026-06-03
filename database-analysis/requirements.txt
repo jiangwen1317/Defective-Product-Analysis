@@ -3,3 +3,4 @@
 
 openpyxl>=3.1.0          # Excel (.xlsx) 读写，RMA 报告导出
 customtkinter>=5.2.0     # 现代化 GUI 界面
+matplotlib>=3.7.0        # 磨损曲线等图表绘制

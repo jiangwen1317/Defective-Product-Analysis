@@ -59,6 +59,18 @@ class ParseResult:
     original_bad_block: Optional[int] = None
     # Cycles
     cycles: int = 0
+    # 设备扩展信息
+    controller: Optional[str] = None
+    capacity_mb: Optional[int] = None
+    capacity_sectors: Optional[int] = None
+    part_number: Optional[str] = None
+    task_link: Optional[str] = None
+    # 测试参数
+    test_cycle: int = 0
+    test_case: int = 0
+    # 最终结果
+    rtms_result: Optional[str] = None
+    rtms_code: Optional[str] = None
     # 所有指标
     metrics: list[MetricEntry] = field(default_factory=list)
     # 汇总
@@ -88,15 +100,17 @@ _RE_SECTION_HEADER = re.compile(r'^([A-Za-z][\w/]*(?:\s+of\s+\w+)?(?:_[\w]+)*)\s
 # "Device_Name              :DM3720.012.13"
 _RE_TOP_KV = re.compile(r'^([A-Za-z_]\w*)\s+:(.*)$')
 
-# 紧凑顶层 KV：无空格填充
+# 紧凑 KV：无空格填充，键名支持数组下标
 # "Cycles:0"
-_RE_COMPACT_KV = re.compile(r'^([A-Za-z_]\w+):(.+)$')
+# "dwBlockPECycle[0000]:0000"
+_RE_COMPACT_KV = re.compile(r'^([A-Za-z_][\w\[\]]+):(.+)$')
 
-# 缩进 KV：4 空格缩进
+# 缩进 KV：4 空格或 Tab 缩进
 # "    wPdmPostCnt            :0x0001"
+# "\twPdmPostCnt            :0x0001"
 # "    dwFreeTimeCollectFailCnt:0x00000000"（key与冒号间无空格）
 # 键名仅允许编程标识符字符（\w/[]/()）和可选前缀 [XXX]，禁止任意空格
-_RE_INDENT_KV = re.compile(r'^    (?:\[([A-Z]+)\] )?([\w\[\]\(\)]+?)\s*:(.*)$')
+_RE_INDENT_KV = re.compile(r'^(?:    |\t)(?:\[([A-Z]+)\] )?([\w\[\]\(\)]+?)\s*:(.*)$')
 
 # Tab 缩进的 Result
 # "\tResult                 :Pass!"
@@ -117,6 +131,40 @@ _RE_HEX_OFFSET_HEADER = re.compile(r'^\s*Offset:')
 # 混合叙述行（非标准，不以已知格式开头）
 # "    A GMZone contains multiple blocks in the MB table, GMZone:0x0"
 _RE_NARRATIVE_LINE = re.compile(r'^    [A-Z][a-z]')
+
+# Ext_CSD 解析字段：Ext_CSD[N] Field Name: value
+# "Ext_CSD[0]   Reserved_0[0-6]:   0x0"
+# "Ext_CSD[253] PWR_CL_DDR_200_360:  (4 bit bus)..."
+_RE_EXT_CSD_KV = re.compile(r'^Ext_CSD\[(\d+(?:-\d+)?)\]\s+(.+?)\s*:\s*(.*)$')
+
+# Platform 系列 KV：键名含空格
+# "Platform Keys: VCC = 3343 mv"
+# "Platform Info: [eMMC Cap] YW"
+# "Platform info:VCC 3345 mv"
+_RE_PLATFORM_KV = re.compile(r'^(Platform\s+\w+)\s*:\s*(.*)$')
+
+# 内联 Section 结果：SectionName:Pass 或 SectionName:Fail
+# "Wear_Detection:Pass"
+# "BM_table_match:Pass"
+# "GM/BIT_comparison_garbage:Pass"
+_RE_INLINE_SECTION_RESULT = re.compile(r'^([\w/]+(?:_[\w]+)*):(Pass|Fail)\s*$')
+
+# 已知的测试 Section 名称白名单（用于内联结果识别，避免误匹配普通 KV）
+_KNOWN_TEST_SECTIONS: set[str] = {
+    "Wear_Detection",
+    "EmptyBlk_Detection",
+    "GarbageDetection",
+    "Cold_and_heat",
+    "PM_mapping_validity_detection",
+    "GM_table_match",
+    "BM_table_match",
+    "GM/BIT_comparison_garbage",
+    "PDMI_legitimacy_detection",
+    "PDMI_index_legitimacy_detection",
+    "PDMBlockGarbComparison",
+    "Check_Partition_Data",
+    "RTMS_StackUtilization",
+}
 
 
 # ============================================================
@@ -183,6 +231,7 @@ def _split_sections(lines: list[str]) -> list[_SectionBlock]:
     - 文件头（Section Header 出现前的顶层 KV）→ "header"
     - "Start of test:" 等 → 对应 Section
     - "Cycles:N" → "Cycles"
+    - "SectionName:Pass/Fail" 内联 Section 结果 → 对应 Section
     - 空行作为 Section 间分隔（不归属任何 Section）
 
     Args:
@@ -208,6 +257,17 @@ def _split_sections(lines: list[str]) -> list[_SectionBlock]:
             current = _SectionBlock(name=section_name)
             blocks.append(current)
             continue
+
+        # 检查是否为内联 Section 结果（如 "Wear_Detection:Pass"）
+        inline_result_match = _RE_INLINE_SECTION_RESULT.match(stripped)
+        if inline_result_match and not stripped.startswith(" ") and not stripped.startswith("\t"):
+            section_name = inline_result_match.group(1).strip()
+            # 仅当 section_name 在已知测试 Section 白名单中时才视为 Section
+            if section_name in _KNOWN_TEST_SECTIONS:
+                current = _SectionBlock(name=section_name)
+                blocks.append(current)
+                current.lines.append(stripped)
+                continue
 
         # 检查是否为紧凑 KV（如 "Cycles:0"）
         compact_match = _RE_COMPACT_KV.match(stripped)
@@ -272,13 +332,14 @@ def _extract_kv_from_block(block: _SectionBlock) -> list[MetricEntry]:
     """从 SectionBlock 中提取所有 KV 指标。
 
     处理的格式：
-    1. 顶层 KV（header section）
-    2. 缩进 KV（4 空格缩进）
-    3. Tab-Result
-    4. 紧凑 KV（Cycles）
-    5. 自由文本行（RTMS_EINFO 描述）
-    6. 混合叙述行（"A GMZone contains..."）
+    1. Tab-Result
+    2. 缩进 KV（4 空格或 Tab 缩进）
+    3. 顶层 KV（header section）
+    4. Ext_CSD 解析字段（Ext_CSD[N] Field: value）
+    5. Platform 系列 KV（Platform Keys/Info/Info）
+    6. 紧凑 KV（Cycles、数组下标）
     7. Hex Dump 块（跳过）
+    8. 自由文本行
 
     Args:
         block: Section 文本块。
@@ -368,25 +429,61 @@ def _extract_kv_from_block(block: _SectionBlock) -> list[MetricEntry]:
                 i += 1
                 continue
 
-            # ---- 4. 紧凑 KV（Cycles） ----
-            compact_match = _RE_COMPACT_KV.match(line)
-            if compact_match and not line.startswith(" ") and not line.startswith("\t"):
-                raw_key = compact_match.group(1)
-                raw_val = compact_match.group(2).strip()
+            # ---- 4. Ext_CSD 解析字段 ----
+            ext_csd_match = _RE_EXT_CSD_KV.match(line)
+            if ext_csd_match:
+                offset = ext_csd_match.group(1)
+                field_name = ext_csd_match.group(2).strip()
+                raw_val = ext_csd_match.group(3).strip()
+                raw_key = f"Ext_CSD[{offset}] {field_name}"
                 num_val, val_type = convert_value(raw_val)
                 entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=raw_key,
+                    section=section, key_raw=raw_key, key=field_name,
                     raw_value=raw_val, num_value=num_val, value_type=val_type,
+                    array_index=offset,
                 ))
                 i += 1
                 continue
 
-            # ---- 5. Hex Dump 数据行（独立出现时跳过） ----
+            # ---- 5. Platform 系列 KV ----
+            plat_match = _RE_PLATFORM_KV.match(line)
+            if plat_match:
+                plat_key = plat_match.group(1).strip()
+                raw_val = plat_match.group(2).strip()
+                entries.append(MetricEntry(
+                    section=section, key_raw=line.strip(), key=plat_key,
+                    raw_value=raw_val, num_value=None, value_type="string",
+                ))
+                i += 1
+                continue
+
+            # ---- 6. 紧凑 KV（Cycles、数组下标） ----
+            compact_match = _RE_COMPACT_KV.match(line)
+            if compact_match and not line.startswith(" ") and not line.startswith("\t"):
+                raw_key = compact_match.group(1)
+                raw_val = compact_match.group(2).strip()
+                # 提取数组下标（如 bFWVersion[64]、dwBlockPECycle[0000]）
+                clean_key = raw_key
+                compact_array_index: Optional[str] = None
+                arr_match = _RE_ARRAY.match(raw_key)
+                if arr_match:
+                    clean_key = arr_match.group(1)
+                    compact_array_index = arr_match.group(2)
+                num_val, val_type = convert_value(raw_val)
+                entries.append(MetricEntry(
+                    section=section, key_raw=raw_key, key=clean_key,
+                    raw_value=raw_val, num_value=num_val, value_type=val_type,
+                    array_index=compact_array_index,
+                ))
+                i += 1
+                continue
+
+            # ---- 7. Hex Dump 数据行（独立出现时跳过） ----
             if _RE_HEX_DUMP_LINE.match(line) or _RE_HEX_OFFSET_HEADER.match(line):
                 i += 1
                 continue
 
-            # ---- 6. 混合叙述行 / 自由文本（非标准行） ----
+            # ---- 8. 混合叙述行 / 自由文本（非标准行） ----
             # 缩进但不匹配冒号分隔的行，整行存储
             if line.startswith("    ") or line.startswith("\t"):
                 free_text_counter += 1
@@ -478,33 +575,83 @@ class LogParser:
         """从 metrics 列表中提取主表冗余字段。
 
         扫描所有指标，根据 section 和 key 提取高频使用的字段值到主表。
+        支持两种日志格式：
+        - 结构化格式（有 Start of test / End of test 等 Section）
+        - 扁平格式（所有字段在 header section，磨损数据在 eMMC_EXT_CSD）
 
         Args:
             result: 待填充的 ParseResult。
         """
-        # header section 中的顶层字段
+        # 磨损指标的候选 section 列表（兼容扁平格式）
+        _wear_sections = {"Wear_Detection", "eMMC_EXT_CSD"}
+        # 测试元数据的候选 section 列表
+        _meta_sections = {"header", "Start of test"}
+
         for m in result.metrics:
-            if m.section == "header":
+            # ---- 设备基本信息（header / Start of test） ----
+            if m.section in _meta_sections:
                 if m.key == "Device_Name":
                     result.device_name = m.raw_value
                 elif m.key == "Device_Tool_Name":
                     result.device_tool_name = m.raw_value
                 elif m.key == "Device_Config_Name":
                     result.device_config_name = m.raw_value
-
-        # Start of test 中的关键字段
-        for m in result.metrics:
-            if m.section == "Start of test":
-                if m.key == "bFWVersion" and m.array_index == "64":
+                elif m.key == "bFWVersion" and m.array_index == "64":
                     result.fw_version = m.raw_value
-                elif m.key == "bMPToolVersion":
+                elif m.key == "bMPToolVersion" and result.mp_tool_version is None:
                     result.mp_tool_version = m.raw_value
-                elif m.key == "bFlashID":
+                elif m.key == "bFlashID" and result.flash_id is None:
                     result.flash_id = m.raw_value
-                elif m.key == "dwOriginalBadBlock":
+                elif m.key == "dwOriginalBadBlock" and result.original_bad_block is None:
                     result.original_bad_block = (
                         int(m.num_value) if m.num_value is not None else None
                     )
+                # 新增字段
+                elif m.key == "Controller" and result.controller is None:
+                    result.controller = m.raw_value
+                elif m.key == "Capacity" and result.capacity_mb is None:
+                    try:
+                        result.capacity_mb = int(m.raw_value)
+                    except (ValueError, TypeError):
+                        pass
+                elif m.key == "PNM" and result.part_number is None:
+                    result.part_number = m.raw_value
+                elif m.key == "TaskLink" and result.task_link is None:
+                    result.task_link = m.raw_value
+                elif m.key == "TestCycle" and result.test_cycle == 0:
+                    try:
+                        result.test_cycle = int(m.raw_value)
+                    except (ValueError, TypeError):
+                        pass
+                elif m.key == "TestCase" and result.test_case == 0:
+                    try:
+                        result.test_case = int(m.raw_value)
+                    except (ValueError, TypeError):
+                        pass
+                elif m.key == "RTMS_Result" and result.rtms_result is None:
+                    result.rtms_result = m.raw_value
+                elif m.key == "RTMS_Code" and result.rtms_code is None:
+                    result.rtms_code = m.raw_value
+
+        # RTMS_Result / RTMS_Code 可能在任意 section，全局查找备用
+        if result.rtms_result is None or result.rtms_code is None:
+            for m in result.metrics:
+                if m.key == "RTMS_Result" and result.rtms_result is None:
+                    result.rtms_result = m.raw_value
+                elif m.key == "RTMS_Code" and result.rtms_code is None:
+                    result.rtms_code = m.raw_value
+
+        # 从 info:Capacity:NNN Sec 格式提取扇区数
+        if result.capacity_sectors is None:
+            _re_info_cap = re.compile(r'^Capacity\s*:\s*(\d+)\s*Sec')
+            for m in result.metrics:
+                if m.key == "info" and result.capacity_sectors is None:
+                    cap_match = _re_info_cap.match(m.raw_value)
+                    if cap_match:
+                        try:
+                            result.capacity_sectors = int(cap_match.group(1))
+                        except (ValueError, TypeError):
+                            pass
 
         # Cycles
         cycle_values = [
@@ -515,30 +662,31 @@ class LogParser:
         if cycle_values:
             result.cycles = max(cycle_values)
 
-        # Wear_Detection 关键指标
+        # Wear_Detection 关键指标（兼容 eMMC_EXT_CSD section）
         for m in result.metrics:
-            if m.section == "Wear_Detection":
-                if m.key == "WAI":
+            if m.section in _wear_sections:
+                if m.key == "WAI" and result.wai is None:
                     result.wai = m.num_value
-                elif m.key == "wSLCMinPECycle":
+                elif m.key == "wSLCMinPECycle" and result.slc_pe_min is None:
                     result.slc_pe_min = int(m.num_value) if m.num_value is not None else None
-                elif m.key == "wSLCMaxPECycle":
+                elif m.key == "wSLCMaxPECycle" and result.slc_pe_max is None:
                     result.slc_pe_max = int(m.num_value) if m.num_value is not None else None
-                elif m.key == "wTLCMinPECycle":
+                elif m.key == "wTLCMinPECycle" and result.tlc_pe_min is None:
                     result.tlc_pe_min = int(m.num_value) if m.num_value is not None else None
-                elif m.key == "wTLCMaxPECycle":
+                elif m.key == "wTLCMaxPECycle" and result.tlc_pe_max is None:
                     result.tlc_pe_max = int(m.num_value) if m.num_value is not None else None
-                elif m.key == "dwIncreaseBadBlock" and m.prefix is None:
+                elif m.key == "dwIncreaseBadBlock" and m.prefix is None and result.increase_bad_block is None:
                     result.increase_bad_block = int(m.num_value) if m.num_value is not None else None
 
-        # End of test 中的 dwIncreaseBadBlock（如果 Wear_Detection 中未取到）
+        # End of test 中的 dwIncreaseBadBlock（如果仍未取到）
         if result.increase_bad_block is None:
             for m in result.metrics:
                 if m.section == "End of test" and m.key == "dwIncreaseBadBlock":
                     result.increase_bad_block = int(m.num_value) if m.num_value is not None else None
                     break
 
-        # 汇总 Result：遍历所有 section 的 Result 指标
+        # 汇总 Result：
+        # 1. 从 Tab-Result 指标中汇总
         fail_sections: list[str] = []
         has_pass = False
         has_fail = False
@@ -550,6 +698,28 @@ class LogParser:
                     fail_sections.append(m.section)
                 elif "Pass" in val:
                     has_pass = True
+
+        # 2. 从内联 Section 结果中汇总（如 Wear_Detection:Pass）
+        for m in result.metrics:
+            if m.section in _KNOWN_TEST_SECTIONS and m.key_raw == m.raw_value:
+                inline_match = _RE_INLINE_SECTION_RESULT.match(m.raw_value)
+                if inline_match:
+                    section_name = inline_match.group(1)
+                    section_result = inline_match.group(2)
+                    if section_result == "Fail":
+                        has_fail = True
+                        if section_name not in fail_sections:
+                            fail_sections.append(section_name)
+                    elif section_result == "Pass":
+                        has_pass = True
+
+        # 3. RTMS_Result 作为最终结果的最高优先级判断
+        if result.rtms_result:
+            rtms_upper = result.rtms_result.strip().upper()
+            if "FAIL" in rtms_upper:
+                has_fail = True
+            elif "PASS" in rtms_upper:
+                has_pass = True
 
         result.fail_sections = fail_sections
         if has_fail:

@@ -14,6 +14,13 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
+import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
+import numpy as np
+
 # 将脚本目录加入 Python 路径
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
@@ -58,7 +65,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("EMMC 测试日志分析系统")
-        self.geometry("1100x720")
+        self.geometry("1280x720")
         self.minsize(900, 600)
 
         # 数据库初始化
@@ -96,6 +103,7 @@ class App(ctk.CTk):
         # 创建各标签页
         self._build_parse_tab(self._tabview.add("📥 数据导入"))
         self._build_query_tab(self._tabview.add("🔍 数据查询"))
+        self._build_wear_tab(self._tabview.add("📈 磨损曲线"))
         self._build_compare_tab(self._tabview.add("⚖️ 指标对比"))
         self._build_sql_tab(self._tabview.add("📋 预设查询"))
         self._build_report_tab(self._tabview.add("📊 报告导出"))
@@ -243,6 +251,15 @@ class App(ctk.CTk):
                         flash_id=result.flash_id, original_bad_block=result.original_bad_block,
                         cycles=result.cycles, overall_result=result.overall_result,
                         fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
+                        controller=result.controller,
+                        capacity_mb=result.capacity_mb,
+                        capacity_sectors=result.capacity_sectors,
+                        part_number=result.part_number,
+                        task_link=result.task_link,
+                        test_cycle=result.test_cycle,
+                        test_case=result.test_case,
+                        rtms_result=result.rtms_result,
+                        rtms_code=result.rtms_code,
                         wai=result.wai, slc_pe_min=result.slc_pe_min, slc_pe_max=result.slc_pe_max,
                         tlc_pe_min=result.tlc_pe_min, tlc_pe_max=result.tlc_pe_max,
                         increase_bad_block=result.increase_bad_block,
@@ -319,7 +336,7 @@ class App(ctk.CTk):
             row=0, column=5, pady=3
         )
 
-        # 行 2
+        # 行 1
         self._q_section = ctk.StringVar()
         self._q_key = ctk.StringVar()
 
@@ -329,7 +346,23 @@ class App(ctk.CTk):
         ctk.CTkLabel(grid, text="指标名:").grid(row=1, column=2, padx=(0, 5), pady=3, sticky="e")
         ctk.CTkEntry(grid, textvariable=self._q_key, width=180).grid(row=1, column=3, padx=(0, 15), pady=3)
 
-        ctk.CTkButton(grid, text="🔍 查询", width=100, command=self._do_query).grid(row=1, column=5, pady=3)
+        # 行 2
+        self._q_flash_id = ctk.StringVar()
+        self._q_capacity = ctk.StringVar()
+        self._q_controller = ctk.StringVar()
+
+        ctk.CTkLabel(grid, text="Flash ID:").grid(row=2, column=0, padx=(0, 5), pady=3, sticky="e")
+        ctk.CTkEntry(grid, textvariable=self._q_flash_id, width=180,
+                     placeholder_text="0x454335...").grid(row=2, column=1, padx=(0, 15), pady=3)
+
+        ctk.CTkLabel(grid, text="容量:").grid(row=2, column=2, padx=(0, 5), pady=3, sticky="e")
+        ctk.CTkEntry(grid, textvariable=self._q_capacity, width=180,
+                     placeholder_text="MB 或 扇区数").grid(row=2, column=3, padx=(0, 15), pady=3)
+
+        ctk.CTkLabel(grid, text="主控:").grid(row=2, column=4, padx=(0, 5), pady=3, sticky="e")
+        ctk.CTkEntry(grid, textvariable=self._q_controller, width=100).grid(row=2, column=5, padx=(0, 5), pady=3, sticky="w")
+
+        ctk.CTkButton(grid, text="🔍 查询", width=100, command=self._do_query).grid(row=2, column=6, pady=3, padx=(10, 0))
 
         # 结果表格
         result_frame = ctk.CTkFrame(parent)
@@ -342,12 +375,13 @@ class App(ctk.CTk):
         tree_frame = ctk.CTkFrame(result_frame, fg_color="transparent")
         tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
-        columns = ("id", "device", "fw_version", "section", "key", "value", "num_value", "result")
+        columns = ("id", "device", "fw_version", "flash_id", "capacity", "section", "key", "value", "num_value", "result")
         self._query_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20)
 
         headers = {
-            "id": ("ID", 50), "device": ("设备名", 130), "fw_version": ("固件版本", 200),
-            "section": ("Section", 180), "key": ("指标名", 150), "value": ("原始值", 120),
+            "id": ("ID", 50), "device": ("设备名", 130), "fw_version": ("固件版本", 180),
+            "flash_id": ("Flash ID", 160), "capacity": ("容量", 90),
+            "section": ("Section", 160), "key": ("指标名", 140), "value": ("原始值", 120),
             "num_value": ("数值", 80), "result": ("结果", 60),
         }
         for col, (text, width) in headers.items():
@@ -364,12 +398,31 @@ class App(ctk.CTk):
         """执行查询。"""
         repo = MetricsRepository(self._db)
 
+        # 解析容量值（支持 MB 和扇区数两种格式）
+        capacity_mb = None
+        capacity_sectors = None
+        cap_str = self._q_capacity.get().strip()
+        if cap_str:
+            try:
+                cap_val = int(cap_str)
+                # 扇区数通常 > 1000000，MB 值通常 < 1000000
+                if cap_val > 1_000_000:
+                    capacity_sectors = cap_val
+                else:
+                    capacity_mb = cap_val
+            except ValueError:
+                pass
+
         with self._db.connect() as conn:
             summaries = repo.get_summaries(
                 conn,
                 device_name=self._q_device.get() or None,
                 fw_version=self._q_fw.get() or None,
+                flash_id=self._q_flash_id.get() or None,
                 overall_result=self._q_result.get() or None,
+                capacity_mb=capacity_mb,
+                capacity_sectors=capacity_sectors,
+                controller=self._q_controller.get() or None,
                 limit=500,
             )
 
@@ -392,10 +445,19 @@ class App(ctk.CTk):
                     section=section_filter, metric_key=key_filter,
                 )
                 for m in metrics:
+                    # 容量显示：优先 MB，其次扇区
+                    cap_display = ""
+                    if s.get("capacity_mb"):
+                        cap_display = f"{s['capacity_mb']} MB"
+                    elif s.get("capacity_sectors"):
+                        cap_display = f"{s['capacity_sectors']} Sec"
+
                     self._query_tree.insert("", "end", values=(
                         s["id"],
                         s.get("device_name", ""),
                         s.get("fw_version", ""),
+                        s.get("flash_id", ""),
+                        cap_display,
                         m["section"],
                         m["metric_key_raw"],
                         m["raw_value"],
@@ -405,6 +467,152 @@ class App(ctk.CTk):
                     row_count += 1
 
         self._query_count_label.configure(text=f"查询结果: {row_count} 条指标（来自 {len(summaries)} 条记录）")
+
+    # ================================================================
+    # Tab: 磨损曲线
+    # ================================================================
+
+    def _build_wear_tab(self, parent: ctk.CTkFrame) -> None:
+        """构建磨损曲线标签页。"""
+        # 输入区
+        input_frame = ctk.CTkFrame(parent)
+        input_frame.pack(fill="x", padx=10, pady=(10, 5))
+
+        ctk.CTkLabel(input_frame, text="Block PE Cycle 磨损曲线",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
+
+        row = ctk.CTkFrame(input_frame, fg_color="transparent")
+        row.pack(fill="x", padx=15, pady=(0, 12))
+
+        ctk.CTkLabel(row, text="记录 ID:").pack(side="left", padx=(0, 5))
+        self._wear_id = ctk.StringVar()
+        ctk.CTkEntry(row, textvariable=self._wear_id, width=100).pack(side="left", padx=(0, 15))
+
+        ctk.CTkButton(row, text="📈 绘制曲线", width=120, command=self._draw_wear_curve).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(row, text="🗑️ 清除", width=80, command=self._clear_wear_curve).pack(side="left")
+
+        self._wear_info_label = ctk.CTkLabel(input_frame, text="", font=ctk.CTkFont(size=12), text_color="gray")
+        self._wear_info_label.pack(anchor="w", padx=15, pady=(0, 10))
+
+        # 图表区
+        chart_frame = ctk.CTkFrame(parent)
+        chart_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+
+        # 创建 matplotlib Figure
+        self._wear_fig = Figure(figsize=(10, 5), dpi=100)
+        self._wear_ax = self._wear_fig.add_subplot(111)
+        self._wear_ax.set_xlabel("Block Index")
+        self._wear_ax.set_ylabel("PE Cycle")
+        self._wear_ax.set_title("Block PE Cycle Wear Curve")
+        self._wear_ax.grid(True, alpha=0.3)
+
+        self._wear_canvas = FigureCanvasTkAgg(self._wear_fig, master=chart_frame)
+        self._wear_canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
+
+        # matplotlib 工具栏
+        toolbar_frame = ctk.CTkFrame(chart_frame, height=40, fg_color="transparent")
+        toolbar_frame.pack(fill="x", padx=5, pady=(0, 5))
+        self._wear_toolbar = NavigationToolbar2Tk(self._wear_canvas, toolbar_frame)
+        self._wear_toolbar.update()
+
+    def _draw_wear_curve(self) -> None:
+        """绘制 Block PE Cycle 磨损曲线。"""
+        id_str = self._wear_id.get().strip()
+        if not id_str or not id_str.isdigit():
+            messagebox.showwarning("提示", "请输入有效的记录 ID")
+            return
+
+        summary_id = int(id_str)
+        repo = MetricsRepository(self._db)
+
+        with self._db.connect() as conn:
+            # 获取记录信息
+            summary = None
+            for s in repo.get_summaries(conn, limit=500):
+                if s["id"] == summary_id:
+                    summary = s
+                    break
+
+            if summary is None:
+                messagebox.showwarning("提示", f"未找到 ID={summary_id} 的记录")
+                return
+
+            # 查询 dwBlockPECycle 指标
+            metrics = repo.get_metrics(conn, summary_id=summary_id, metric_key="dwBlockPECycle")
+
+        if not metrics:
+            messagebox.showinfo("提示", "该记录中未找到 dwBlockPECycle 数据")
+            return
+
+        # 按 array_index 排序
+        pe_data = []
+        for m in metrics:
+            if m.get("array_index") is not None:
+                try:
+                    block_idx = int(m["array_index"])
+                    pe_val = int(m["num_value"]) if m.get("num_value") is not None else 0
+                    pe_data.append((block_idx, pe_val))
+                except (ValueError, TypeError):
+                    pass
+
+        if not pe_data:
+            messagebox.showinfo("提示", "dwBlockPECycle 数据无有效的块索引")
+            return
+
+        pe_data.sort(key=lambda x: x[0])
+        block_indices = [d[0] for d in pe_data]
+        pe_values = [d[1] for d in pe_data]
+
+        # 统计
+        total_blocks = len(pe_values)
+        max_pe = max(pe_values)
+        min_pe = min(pe_values)
+        avg_pe = sum(pe_values) / total_blocks if total_blocks > 0 else 0
+        non_zero = sum(1 for v in pe_values if v > 0)
+
+        # 更新信息标签
+        self._wear_info_label.configure(
+            text=f"设备: {summary.get('device_name', '')}  |  "
+                 f"总块数: {total_blocks}  |  非零: {non_zero}  |  "
+                 f"Max PE: {max_pe}  |  Min PE: {min_pe}  |  Avg PE: {avg_pe:.2f}"
+        )
+
+        # 绘制
+        self._wear_ax.clear()
+        self._wear_ax.set_xlabel("Block Index", fontsize=11)
+        self._wear_ax.set_ylabel("PE Cycle", fontsize=11)
+        self._wear_ax.set_title(
+            f"Block PE Cycle Wear Curve — {summary.get('device_name', '')} "
+            f"(FW: {summary.get('fw_version', '')[:30]})",
+            fontsize=12,
+        )
+        self._wear_ax.grid(True, alpha=0.3)
+
+        # 柱状图 + 均值线
+        colors = ['#e74c3c' if v == max_pe and v > 0 else
+                  '#2ecc71' if v > 0 else
+                  '#bdc3c7'
+                  for v in pe_values]
+        self._wear_ax.bar(block_indices, pe_values, color=colors, width=0.8, alpha=0.85)
+
+        if avg_pe > 0:
+            self._wear_ax.axhline(y=avg_pe, color='#f39c12', linestyle='--', linewidth=1.5,
+                                  label=f'Avg: {avg_pe:.2f}')
+            self._wear_ax.legend(loc='upper left')
+
+        self._wear_fig.tight_layout()
+        self._wear_canvas.draw()
+
+    def _clear_wear_curve(self) -> None:
+        """清除磨损曲线图表。"""
+        self._wear_ax.clear()
+        self._wear_ax.set_xlabel("Block Index")
+        self._wear_ax.set_ylabel("PE Cycle")
+        self._wear_ax.set_title("Block PE Cycle Wear Curve")
+        self._wear_ax.grid(True, alpha=0.3)
+        self._wear_fig.tight_layout()
+        self._wear_canvas.draw()
+        self._wear_info_label.configure(text="")
 
     # ================================================================
     # Tab 3: 指标对比

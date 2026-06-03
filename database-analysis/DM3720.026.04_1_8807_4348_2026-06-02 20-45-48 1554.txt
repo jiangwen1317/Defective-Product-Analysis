@@ -1,0 +1,1067 @@
+Load_Config:RTMS-03-04,
+RTMS_First_Code:0
+RTMS_First_Result:Pass
+Wear_Detection:NULL
+GarbageDetection:NULL
+Cold_and_heat:NULL
+PM_mapping_validity_detection:NULL
+GM_table_match:NULL
+GM/BIT_comparison_garbage:NULL
+PDMI_legitimacy_detection:NULL
+PDMI_index_legitimacy_detection:NULL
+wUpdateBlock[0]        :NULL
+wUpdateBlock[1]        :NULL
+wTempInfoBlk           :NULL
+wGarBlockNum           :NULL
+dwGarbNum              :NULL
+wBlockNum              :NULL
+dwHotValue             :NULL
+dwBlockPECycle         :NULL
+dwGMZoneNum            :NULL
+dwBlock                :NULL
+GMOffset               :NULL
+dwGMBlockNum           :NULL
+dwGMGarbCnt            :NULL
+dwCnt                  :NULL
+dwOffset               :NULL
+dwMaxVaildPDMI         :NULL
+dwPdmBlkIndex          :NULL
+dwPdmBlkAuOffset       :NULL
+wPdmBlockNum           :NULL
+dwiCnt                 :NULL
+dwPdmiBlkIndex         :NULL
+dwPdmiBlkAuOffset      :NULL
+wPdmiBlockNum          :NULL
+bAuState               :NULL
+dwPMZoneNum            :NULL
+dwPPNCnt               :NULL
+dwPMBlock              :NULL
+dwAUOffset             :NULL
+RTMS_INFO:RTMS_Set_Level_Check_4690 cancel check dwFreeBlockLevel4CntSLC
+RTMS_INFO:RTMS_Set_Level_Check_4710 cancel check dwFreeBlockLevel3CntSLC
+RTMS_INFO:RTMS_Set_Level_Check_4729 cancel check dwFreeBlockLevel4Cnt
+RTMS_INFO:RTMS_Set_Level_Check_4748 cancel check dwFreeBlockLevel3Cnt
+RTMS_INFO:RTMSfile_name:RTMS/RTMS_RTMSLOG_2.txt
+Device_Name:DM3720.026.04
+Device_Tool_Name:RTMS.bin
+Device_Config_Name:RTMS-03-04.json
+dwNormalGCTime_[0]:0x00000000
+dwNormalGCTime_[1]:0x00000000
+dwGCLV1DoLV2Cnt_[0]:0x00000000
+dwGCLV1DoLV2Cnt_[1]:0x00000000
+dwGCLV2Cnt_[0]:0x00000000
+dwGCLV2Cnt_[1]:0x00000000
+dwFreeBlkL3Cnt_[0]:0x00000000
+dwFreeBlkL3Cnt_[1]:0x00000000
+wFreeBlkL4Cnt_[0]:0x0000
+wFreeBlkL4Cnt_[1]:0x0000
+wFreeBlkL4Cnt_PowerOn_[0]:0x0000
+wFreeBlkl4Cnt_PowerOn_[1]:0x0000
+dwLgWrGccnt:0xffffffff
+bFWVersion[64]:TL600E -V3.2.9-Jun  2 2026 19:33:31
+bMPToolVersion:V1.0.9
+bFWVersion[8]:0x0009020000000000
+bFlashID:0x45433545413838463838433100000000
+dwOriginalBadBlock:0x00000001
+RTMS_INFO:RTMS start monitoring!
+PNM:D8A61C
+Controller:600
+info:Capacity:122224640 Sec
+info:This Card Suppot Patitioning
+info:This Card Suppot Extened Partition
+info:This Card Suppot Enhanced Strobe Mode
+info:This Card Suppot CMDQ Mode
+info:This Card Suppot FFU Mode
+info:This Card Suppot Data Tag
+info:This Card Suppot HPI
+Platform Info: [eMMC Cap] YW (YouWei Lock/Unlock)
+Platform Info: [eMMC Cap] Partitioning
+Platform Info: [eMMC Cap] Enhance Partition
+Platform Info: [eMMC Cap] Extended Partition
+Platform Info: [eMMC Cap] BKOPS (Background Operations)
+Platform Info: [eMMC Cap] Secure Erase
+Platform Info: [eMMC Cap] Strobe (Enhanced Data Strobe)
+Platform Info: [eMMC Cap] CMDQ (Command Queue)
+Platform Info: [eMMC Cap] FFU (Field Firmware Update)
+Platform Info: [eMMC Cap] Data Tag
+Platform Info: [eMMC Cap] HPI (Host Performance Interface)
+TaskLink:10.2.3.145/device/27582/false/316903
+Platform info:VCC 3345 mv
+Platform info:VCCQ 1840 mv
+SYS:Start
+SYS:DM3720 test platform V1.0
+SYS:Init HW - Done
+SYS:data verification - Done
+SYS:Init successful
+Platform:DM3720
+DeviceIP:10. 2.195.24
+PF_SF_Ver:V1.0
+PF_HW_Ver:V1.0
+Script:GM_SPOR
+Script_Ver:V2.0.4
+Controller:600
+Capacity:59680
+Config_Name:RTMS-03-04.json
+TestCycle:1
+TestCase:13
+DelayMs:2
+SpeedMode:3
+BusWidth:2
+AllCycle:50000
+TestCnt:0
+PassCnt:0
+FailCnt:0
+WarningCnt:0
+Result:Pass
+Status:Pass
+wPdmPostCnt:0x00010000
+wCheckReadPdmCnt:0x0000
+dwEnhanceUserStartAddr:0xffffffff
+dwEnhanceUserEndAddr:0xffffffff
+wIllegalPowerLossCnt:0x0000
+wRollBackCnt_DB:0x0000
+wDestroyTimes:0x0000
+wBITCheckFailCnt:0x0000
+dwFreeBlockLevel4CntSLC:0x0000
+dwFreeBlockLevel3CntSLC:0x00000000
+dwFreeBlockLevel4Cnt:0x0000
+dwFreeBlockLevel3Cnt:0x00000000
+bCMDQErrRdIDCnt:0x00
+bCMDQErrWrIDCnt:0x00
+wCMDQ48Cnt:0x0000
+wCRCErrorCnt:0x0000
+wSLCFreeBlkNum:0x0000
+wTLCFreeBlkNum:0x0165
+wVDTCnt:0x0000
+wVDTCnt_VCC:0x0000
+wVDTCnt_VCCQ:0x0000
+bFFUSuccessCount:0x00
+wNoValidPageGCCnt:0x0000
+dwBalanceCnt:0x00000000
+bIDAStat:0x01
+bIDAFunEn:0x01
+dwPowerOnCnt:0x00000002
+bIDAColleoted:0x00
+wNewBadBlkNum:0x0000
+wReplaceCnt:0x0000
+wBackupFWUsedCount:0x0000
+wHotBlockReplaceErrCnt:0x0000
+bPowerOnOverTimeCnt:0x00
+wEraseCnt:0x0000
+wTirmCnt:0x0000
+wPackCmdCnt:0x0000
+wRPMBWRCnt:0x0000
+wTrimTargTLCBlk:0xffff
+wTrimTargBalanceBlk:0x00
+wPowerNotificationCnt:0x0000
+wLogEdECCFailCnt:0x0000
+dwBITIndexWrCnt:0x00000005
+wEraseFailCnt:0x0000
+wEraseFailBlkTotal:0x0000
+wCheckCodeFailCnt:0x0000
+dwDynamic_FinishCnt:0x0001
+dwDynamic_NowDone:0x00000041
+bTemperatureMax:0x65
+bTemperatureMin:0x59
+wLogBlock:0x0006
+ExceptionRWTag:0xffffffff
+wCheckTargetBlkFailCnt:0x0000
+wGCRdTempBlkFailCnt:0x0000
+RecordExceptionRWInx:0x0000
+dwEmmcMaxUserSize:0x07490000
+dwsleep_bit_err_cnt_1:0x0000
+dwsleep_bit_err_cnt_2:0x0000
+dwNormalGCTime_[0]:0x00000000
+dwNormalGCTime_[1]:0x00000000
+dwGCLV1DoLV2Cnt_[0]:0x00000000
+dwGCLV1DoLV2Cnt_[1]:0x00000000
+dwGCLV2Cnt_[0]:0x00000000
+dwGCLV2Cnt_[1]:0x00000000
+dwFreeBlkL3Cnt_[0]:0x00000000
+dwFreeBlkL3Cnt_[1]:0x00000000
+wFreeBlkL4Cnt_[0]:0x0000
+wFreeBlkL4Cnt_[1]:0x0000
+wFreeBlkL4Cnt_PowerOn_[0]:0x0000
+wFreeBlkl4Cnt_PowerOn_[1]:0x0000
+dwLgWrGccnt:0xffffffff
+bFWVersion[64]:TL600E -V3.2.9-Jun  2 2026 19:33:31
+bMPToolVersion:V1.0.9
+bFWVersion[8]:0x0009020000000000
+bFlashID:0x45433545413838463838433100000000
+dwOriginalBadBlock:0x00000001
+dwIncreaseBadBlock:0x00000000
+dwUncorrectableCount:0x00000000
+wLogWrCopyPageErrCnt:0x0000
+dwDummyReadWrite:0x00000000
+dwWatchDogCnt:0x00000000
+dwCRCErrCnt:0x00000000
+dwVDTNum:0x00000000
+dwFreeTimeCollectFailCnt:0x00000000
+dwPowerUperNum:0x00000002
+dwIllegalPowerLossCount:0x00000000
+dwMinWearHumberForCache:0x00000000
+dwMaxWearCntForSLC:0x00000000
+dwMaxWearCntForTLC:0x0000001b
+dwMinWearNumber:0x00000000
+bSLCWearPercentage:0x00
+bTLCWearPercentage:0x01
+dwReplaceHumber:0x00000000
+wHotBlockReplaceCnt:0x0000
+lwWriteAllSectNum:0x0000000000005000
+lwWriteSectCnt:0x0000000000005000
+lwSLCWriteSectNum:0x0000000000000000
+lwReadAllSectNum:0x000000000000823a
+wDisCardCnt:0x0000
+wTrimCnt:0x0000
+wPackedCmdCnt:0x0000
+wRPMBWrCnt:0x0000
+wRPMBImpCnt:0x0000
+wSecureWPCnt:0x0000
+wCmdQueCnt:0x0000
+wWPCnt:0x0000
+wBootWPCnt:0x0000
+wLockUnLockCnt:0x0000
+wRelWrCnt:0x0000
+wFowerNotificationCnt:0x0000
+dwHWResetCnt:0x00000000
+dwReadRetryTime:0x00000000
+dwSWReadReadRetryTime:0x00000000
+dwNormalGCTime:0x00000000
+dwAllGarbGCTime:0x00000000
+bBOOT_SIZE_MULT:0xff
+dwSEC_COUNT:0x07490000
+bDEVICE_LIFE_B:0x00
+bDEVICE_LIFE_A:0x01
+bFIRMWARE_VERSION:0x1500000000000000
+bPRE_EOL_INFO:0x01
+bEXC_EVENTS_STATUS:0x0000
+bPACKED_FAILURE_INDEX:0x00
+bPOWER_OFF_NOTIFICATION:0x00
+bRPMB_SIZE_MULT:0x20
+bCSD:0xd0ffff329f5903ffffffffef96400000
+bCID:0xd6290344384136314315000023f91b00
+wTemperature:0x2260
+lwTLCWearTotal:0x0000000a
+lwTLCWriteAllSect:0x0000000000000000
+eMMC_EXT_CSD:
+Offset:  00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
+...000:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...016:  39 03 00 80 6d 02 00 00 00 00 00 00 00 00 00 00
+...032:  00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...048:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...064:  00 01 01 01 00 00 00 00 00 00 00 00 00 00 00 00
+...080:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...096:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...112:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...128:  00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+...144:  00 00 00 00 00 00 00 00 00 00 00 00 00 b6 09 00
+...160:  07 00 00 02 00 00 15 1f 20 00 00 00 00 00 00 00
+...176:  00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00
+...192:  08 00 02 00 57 1f 0a 0a 00 00 00 00 00 00 00 00
+...208:  00 00 00 01 00 00 49 07 10 16 0a 0a 07 10 01 07
+...224:  01 06 ff 00 07 f7 f7 55 05 00 00 00 00 00 00 00
+...240:  00 1e 00 00 00 00 00 3c 0a 00 00 01 00 00 15 00
+...256:  00 00 00 00 00 00 00 00 01 20 00 01 01 00 00 00
+...272:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...288:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...304:  00 00 00 1f 01 00 00 00 00 00 00 00 00 00 00 00
+...320:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...336:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...352:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...368:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...384:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...400:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...416:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...432:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...448:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...464:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+...480:  00 00 00 00 00 00 00 48 88 ff ff 00 00 03 03 07
+...496:  05 00 03 01 3f 3f 01 01 01 00 00 00 00 00 00 00
+eMMC_CSD:0x96400000ffffffef9f5903ffd0ffff32
+eMMC_CID:0x001bf9230000154331364138440329d6
+wSLCMinPECycle         :0x0
+wSLCMinPECycleBlkNum   :0x0
+wSLCMaxPECycle         :0x0
+wSLCMaxPECycleBlkNum   :0x0
+wTLCMinPECycle         :0x0
+wTLCMinPECycleBlkNum   :0xd
+wTLCMaxPECycle         :0x1
+wTLCMaxPECycleBlkNum   :0x2
+[SLC] WearGap          :0x0
+[TLC] WearGap          :0x1
+lwRTMSUserCapacity     :0x7490000
+lwWriteAllsectNum      :0x5000
+lwWriteSLCSectNum      :0x0
+dwDegreOfwear          :0x1b
+dwWAIThreshold         :1000.1
+WAI                    :161.136
+WA(SLC)                :0.000
+WA(TLC)                :198.000
+TLCBlockSize           :0x63000
+SLCBlockSize           :0x21000
+bPRE_EOL_INFO          :0x1
+bDevice_Life_A         :0x1
+bDevice_Life_B         :0x0
+bTLCDeegreOfWear       :0x1
+bSLCDeegreOfWear       :0x0
+dwTLCDeegreOfWearTotal :0xa
+dwSLCDeegreOfWearTotal :0x0
+dwSLCDeegreOfAvgWear   :0x0
+dwTLCDeegreOfAvgWear   :0x0
+dwSLCDeegreOfAvgWearMag:0x0
+dwTLCDeegreOfAvgWearMag:0x1b
+dwIncreaseBadBlock     :0x0
+dwRTMSIncreaseBadBlock :0x0
+dwNewBadBlkMax         :0x8
+EXT_CSD_Buf[267]       :0x1
+Wear_Detection:Pass
+wBlockTotalNum         :0x171
+dwRemapping            :0x0
+dwFreeBlockCnt         :0x0
+dwEmptyBlockCnt        :0x0
+EmptyBlk_Detection:Pass
+GarbageDetection:Pass
+dwMaxWearNumberForCache:0x0
+dwMaxWearNumber        :0x1b
+Cold_and_heat:Pass
+dwPMMapping_Validity   :0x0
+PM_mapping_validity_detection:Pass
+BM_table_match:Pass
+PDMBlockGarbComparison:Pass
+GM/BIT_comparison_garbage:Pass
+PDMI_legitimacy_detection:Pass
+PDMI_index_legitimacy_detection:Pass
+RTMS_INFO:CheckEMMCPartData_5113 dwCapacity_user = 122224640
+RTMS_INFO:CheckEMMCPartData_5158 dwSLCAreaBlkNum = 0
+PARTDATAUSER1          : start = 0x0 end = 0x748ffff
+PARTDATABOOT1          : start = 0x7490000 end = 0x749feff
+PARTDATABOOT2          : start = 0x74a0000 end = 0x74afeff
+PARTDATARPMB           : start = 0x74b0000 end = 0x74b1fff
+Check_Partition_Data:Pass
+dwStackUsage           :17
+RTMS_StackUtilization:Pass
+rtms_str_var:dwDegreOfwear
+rtms_get_var:27
+rtms_str_var:bFWVersion[64]
+rtms_get_var:TL600E -V3.2.9-Jun  2 2026 19:33:31
+rtms_str_var:bMPToolVersion
+rtms_get_var:V1.0.9
+rtms_str_var:bFWVersion[8]
+rtms_get_var:00 09 02 00 00 00 00 00
+rtms_str_var:bFlashID
+rtms_get_var:45 43 35 45 41 38 38 46 38 38 43 31 00 00 00 00
+rtms_str_var:dwOriginalBadBlock
+rtms_get_var:1
+rtms_str_var:dwIncreaseBadBlock
+rtms_get_var:0
+rtms_str_var:dwUncorrectableCount
+rtms_get_var:0
+rtms_str_var:wLogWrCopyPageErrCnt
+rtms_get_var:0
+rtms_str_var:dwDummyReadWrite
+rtms_get_var:0
+rtms_str_var:dwWatchDogCnt
+rtms_get_var:0
+rtms_str_var:dwCRCErrCnt
+rtms_get_var:0
+rtms_str_var:dwVDTNum
+rtms_get_var:0
+rtms_str_var:dwFreeTimeCollectFailCnt
+rtms_get_var:0
+rtms_str_var:dwPowerUperNum
+rtms_get_var:2
+rtms_str_var:dwIllegalPowerLossCount
+rtms_get_var:0
+rtms_str_var:dwMinWearHumberForCache
+rtms_get_var:0
+rtms_str_var:dwMaxWearCntForSLC
+rtms_get_var:0
+rtms_str_var:dwMaxWearCntForTLC
+rtms_get_var:27
+rtms_str_var:dwMinWearNumber
+rtms_get_var:0
+rtms_str_var:bSLCWearPercentage
+rtms_get_var:00
+rtms_str_var:bTLCWearPercentage
+rtms_get_var:01
+rtms_str_var:dwReplaceHumber
+rtms_get_var:0
+rtms_str_var:wHotBlockReplaceCnt
+rtms_get_var:0
+rtms_str_var:lwWriteAllSectNum
+rtms_get_var:20480
+rtms_str_var:lwWriteSectCnt
+rtms_get_var:20480
+rtms_str_var:lwSLCWriteSectNum
+rtms_get_var:0
+rtms_str_var:lwReadAllSectNum
+rtms_get_var:33338
+rtms_str_var:wDisCardCnt
+rtms_get_var:0
+rtms_str_var:wTrimCnt
+rtms_get_var:0
+rtms_str_var:wPackedCmdCnt
+rtms_get_var:0
+rtms_str_var:wRPMBWrCnt
+rtms_get_var:0
+rtms_str_var:wRPMBImpCnt
+rtms_get_var:0
+rtms_str_var:wSecureWPCnt
+rtms_get_var:0
+rtms_str_var:wCmdQueCnt
+rtms_get_var:0
+rtms_str_var:wWPCnt
+rtms_get_var:0
+rtms_str_var:wBootWPCnt
+rtms_get_var:0
+rtms_str_var:wLockUnLockCnt
+rtms_get_var:0
+rtms_str_var:wRelWrCnt
+rtms_get_var:0
+rtms_str_var:wFowerNotificationCnt
+rtms_get_var:0
+rtms_str_var:dwHWResetCnt
+rtms_get_var:0
+rtms_str_var:dwReadRetryTime
+rtms_get_var:0
+rtms_str_var:dwSWReadReadRetryTime
+rtms_get_var:0
+rtms_str_var:dwNormalGCTime
+rtms_get_var:0
+rtms_str_var:dwAllGarbGCTime
+rtms_get_var:0
+dwBlockPECycle[0000]:0000
+dwBlockPECycle[0001]:0001
+dwBlockPECycle[0002]:0001
+dwBlockPECycle[0003]:0001
+dwBlockPECycle[0004]:0001
+dwBlockPECycle[0005]:0001
+dwBlockPECycle[0006]:0001
+dwBlockPECycle[0007]:0001
+dwBlockPECycle[0008]:0001
+dwBlockPECycle[0009]:0001
+dwBlockPECycle[0010]:0001
+dwBlockPECycle[0011]:0001
+dwBlockPECycle[0012]:0001
+dwBlockPECycle[0013]:0000
+dwBlockPECycle[0014]:0000
+dwBlockPECycle[0015]:0000
+dwBlockPECycle[0016]:0000
+dwBlockPECycle[0017]:0000
+dwBlockPECycle[0018]:0000
+dwBlockPECycle[0019]:0000
+dwBlockPECycle[0020]:0000
+dwBlockPECycle[0021]:0000
+dwBlockPECycle[0022]:0000
+dwBlockPECycle[0023]:0000
+dwBlockPECycle[0024]:0000
+dwBlockPECycle[0025]:0000
+dwBlockPECycle[0026]:0000
+dwBlockPECycle[0027]:0000
+dwBlockPECycle[0028]:0000
+dwBlockPECycle[0029]:0000
+dwBlockPECycle[0030]:0000
+dwBlockPECycle[0031]:0000
+dwBlockPECycle[0032]:0000
+dwBlockPECycle[0033]:0000
+dwBlockPECycle[0034]:0000
+dwBlockPECycle[0035]:0000
+dwBlockPECycle[0036]:0000
+dwBlockPECycle[0037]:0000
+dwBlockPECycle[0038]:0000
+dwBlockPECycle[0039]:0000
+dwBlockPECycle[0040]:0000
+dwBlockPECycle[0041]:0000
+dwBlockPECycle[0042]:0000
+dwBlockPECycle[0043]:0000
+dwBlockPECycle[0044]:0000
+dwBlockPECycle[0045]:0000
+dwBlockPECycle[0046]:0000
+dwBlockPECycle[0047]:0000
+dwBlockPECycle[0048]:0000
+dwBlockPECycle[0049]:0000
+dwBlockPECycle[0050]:0000
+dwBlockPECycle[0051]:0000
+dwBlockPECycle[0052]:0000
+dwBlockPECycle[0053]:0000
+dwBlockPECycle[0054]:0000
+dwBlockPECycle[0055]:0000
+dwBlockPECycle[0056]:0000
+dwBlockPECycle[0057]:0000
+dwBlockPECycle[0058]:0000
+dwBlockPECycle[0059]:0000
+dwBlockPECycle[0060]:0000
+dwBlockPECycle[0061]:0000
+dwBlockPECycle[0062]:0000
+dwBlockPECycle[0063]:0000
+dwBlockPECycle[0064]:0000
+dwBlockPECycle[0065]:0000
+dwBlockPECycle[0066]:0000
+dwBlockPECycle[0067]:0000
+dwBlockPECycle[0068]:0000
+dwBlockPECycle[0069]:0000
+dwBlockPECycle[0070]:0000
+dwBlockPECycle[0071]:0000
+dwBlockPECycle[0072]:0000
+dwBlockPECycle[0073]:0000
+dwBlockPECycle[0074]:0000
+dwBlockPECycle[0075]:0000
+dwBlockPECycle[0076]:0000
+dwBlockPECycle[0077]:0000
+dwBlockPECycle[0078]:0000
+dwBlockPECycle[0079]:0000
+dwBlockPECycle[0080]:0000
+dwBlockPECycle[0081]:0000
+dwBlockPECycle[0082]:0000
+dwBlockPECycle[0083]:0000
+dwBlockPECycle[0084]:0000
+dwBlockPECycle[0085]:0000
+dwBlockPECycle[0086]:0000
+dwBlockPECycle[0087]:0000
+dwBlockPECycle[0088]:0000
+dwBlockPECycle[0089]:0000
+dwBlockPECycle[0090]:0000
+dwBlockPECycle[0091]:0000
+dwBlockPECycle[0092]:0000
+dwBlockPECycle[0093]:0000
+dwBlockPECycle[0094]:0000
+dwBlockPECycle[0095]:0000
+dwBlockPECycle[0096]:0000
+dwBlockPECycle[0097]:0000
+dwBlockPECycle[0098]:0000
+dwBlockPECycle[0099]:0000
+dwBlockPECycle[0100]:0000
+dwBlockPECycle[0101]:0000
+dwBlockPECycle[0102]:0000
+dwBlockPECycle[0103]:0000
+dwBlockPECycle[0104]:0000
+dwBlockPECycle[0105]:0000
+dwBlockPECycle[0106]:0000
+dwBlockPECycle[0107]:0000
+dwBlockPECycle[0108]:0000
+dwBlockPECycle[0109]:0000
+dwBlockPECycle[0110]:0000
+dwBlockPECycle[0111]:0000
+dwBlockPECycle[0112]:0000
+dwBlockPECycle[0113]:0000
+dwBlockPECycle[0114]:0000
+dwBlockPECycle[0115]:0000
+dwBlockPECycle[0116]:0000
+dwBlockPECycle[0117]:0000
+dwBlockPECycle[0118]:0000
+dwBlockPECycle[0119]:0000
+dwBlockPECycle[0120]:0000
+dwBlockPECycle[0121]:0000
+dwBlockPECycle[0122]:0000
+dwBlockPECycle[0123]:0000
+dwBlockPECycle[0124]:0000
+dwBlockPECycle[0125]:0000
+dwBlockPECycle[0126]:0000
+dwBlockPECycle[0127]:0000
+dwBlockPECycle[0128]:0000
+dwBlockPECycle[0129]:0000
+dwBlockPECycle[0130]:0000
+dwBlockPECycle[0131]:0000
+dwBlockPECycle[0132]:0000
+dwBlockPECycle[0133]:0000
+dwBlockPECycle[0134]:0000
+dwBlockPECycle[0135]:0000
+dwBlockPECycle[0136]:0000
+dwBlockPECycle[0137]:0000
+dwBlockPECycle[0138]:0000
+dwBlockPECycle[0139]:0000
+dwBlockPECycle[0140]:0000
+dwBlockPECycle[0141]:0000
+dwBlockPECycle[0142]:0000
+dwBlockPECycle[0143]:0000
+dwBlockPECycle[0144]:0000
+dwBlockPECycle[0145]:0000
+dwBlockPECycle[0146]:0000
+dwBlockPECycle[0147]:0000
+dwBlockPECycle[0148]:0000
+dwBlockPECycle[0149]:0000
+dwBlockPECycle[0150]:0000
+dwBlockPECycle[0151]:0000
+dwBlockPECycle[0152]:0000
+dwBlockPECycle[0153]:0000
+dwBlockPECycle[0154]:0000
+dwBlockPECycle[0155]:0000
+dwBlockPECycle[0156]:0000
+dwBlockPECycle[0157]:0000
+dwBlockPECycle[0158]:0000
+dwBlockPECycle[0159]:0000
+dwBlockPECycle[0160]:0000
+dwBlockPECycle[0161]:0000
+dwBlockPECycle[0162]:0000
+dwBlockPECycle[0163]:0000
+dwBlockPECycle[0164]:0000
+dwBlockPECycle[0165]:0000
+dwBlockPECycle[0166]:0000
+dwBlockPECycle[0167]:0000
+dwBlockPECycle[0168]:0000
+dwBlockPECycle[0169]:0000
+dwBlockPECycle[0170]:0000
+dwBlockPECycle[0171]:0000
+dwBlockPECycle[0172]:0000
+dwBlockPECycle[0173]:0000
+dwBlockPECycle[0174]:0000
+dwBlockPECycle[0175]:0000
+dwBlockPECycle[0176]:0000
+dwBlockPECycle[0177]:0000
+dwBlockPECycle[0178]:0000
+dwBlockPECycle[0179]:0000
+dwBlockPECycle[0180]:0000
+dwBlockPECycle[0181]:0000
+dwBlockPECycle[0182]:0000
+dwBlockPECycle[0183]:0000
+dwBlockPECycle[0184]:0000
+dwBlockPECycle[0185]:0000
+dwBlockPECycle[0186]:0000
+dwBlockPECycle[0187]:0000
+dwBlockPECycle[0188]:0000
+dwBlockPECycle[0189]:0000
+dwBlockPECycle[0190]:0000
+dwBlockPECycle[0191]:0000
+dwBlockPECycle[0192]:0000
+dwBlockPECycle[0193]:0000
+dwBlockPECycle[0194]:0000
+dwBlockPECycle[0195]:0000
+dwBlockPECycle[0196]:0000
+dwBlockPECycle[0197]:0000
+dwBlockPECycle[0198]:0000
+dwBlockPECycle[0199]:0000
+dwBlockPECycle[0200]:0000
+dwBlockPECycle[0201]:0000
+dwBlockPECycle[0202]:0000
+dwBlockPECycle[0203]:0000
+dwBlockPECycle[0204]:0000
+dwBlockPECycle[0205]:0000
+dwBlockPECycle[0206]:0000
+dwBlockPECycle[0207]:0000
+dwBlockPECycle[0208]:0000
+dwBlockPECycle[0209]:0000
+dwBlockPECycle[0210]:0000
+dwBlockPECycle[0211]:0000
+dwBlockPECycle[0212]:0000
+dwBlockPECycle[0213]:0000
+dwBlockPECycle[0214]:0000
+dwBlockPECycle[0215]:0000
+dwBlockPECycle[0216]:0000
+dwBlockPECycle[0217]:0000
+dwBlockPECycle[0218]:0000
+dwBlockPECycle[0219]:0000
+dwBlockPECycle[0220]:0000
+dwBlockPECycle[0221]:0000
+dwBlockPECycle[0222]:0000
+dwBlockPECycle[0223]:0000
+dwBlockPECycle[0224]:0000
+dwBlockPECycle[0225]:0000
+dwBlockPECycle[0226]:0000
+dwBlockPECycle[0227]:0000
+dwBlockPECycle[0228]:0000
+dwBlockPECycle[0229]:0000
+dwBlockPECycle[0230]:0000
+dwBlockPECycle[0231]:0000
+dwBlockPECycle[0232]:0000
+dwBlockPECycle[0233]:0000
+dwBlockPECycle[0234]:0000
+dwBlockPECycle[0235]:0000
+dwBlockPECycle[0236]:0000
+dwBlockPECycle[0237]:0000
+dwBlockPECycle[0238]:0000
+dwBlockPECycle[0239]:0000
+dwBlockPECycle[0240]:0000
+dwBlockPECycle[0241]:0000
+dwBlockPECycle[0242]:0000
+dwBlockPECycle[0243]:0000
+dwBlockPECycle[0244]:0000
+dwBlockPECycle[0245]:0000
+dwBlockPECycle[0246]:0000
+dwBlockPECycle[0247]:0000
+dwBlockPECycle[0248]:0000
+dwBlockPECycle[0249]:0000
+dwBlockPECycle[0250]:0000
+dwBlockPECycle[0251]:0000
+dwBlockPECycle[0252]:0000
+dwBlockPECycle[0253]:0000
+dwBlockPECycle[0254]:0000
+dwBlockPECycle[0255]:0000
+dwBlockPECycle[0256]:0000
+dwBlockPECycle[0257]:0000
+dwBlockPECycle[0258]:0000
+dwBlockPECycle[0259]:0000
+dwBlockPECycle[0260]:0000
+dwBlockPECycle[0261]:0000
+dwBlockPECycle[0262]:0000
+dwBlockPECycle[0263]:0000
+dwBlockPECycle[0264]:0000
+dwBlockPECycle[0265]:0000
+dwBlockPECycle[0266]:0000
+dwBlockPECycle[0267]:0000
+dwBlockPECycle[0268]:0000
+dwBlockPECycle[0269]:0000
+dwBlockPECycle[0270]:0000
+dwBlockPECycle[0271]:0000
+dwBlockPECycle[0272]:0000
+dwBlockPECycle[0273]:0000
+dwBlockPECycle[0274]:0000
+dwBlockPECycle[0275]:0000
+dwBlockPECycle[0276]:0000
+dwBlockPECycle[0277]:0000
+dwBlockPECycle[0278]:0000
+dwBlockPECycle[0279]:0000
+dwBlockPECycle[0280]:0000
+dwBlockPECycle[0281]:0000
+dwBlockPECycle[0282]:0000
+dwBlockPECycle[0283]:0000
+dwBlockPECycle[0284]:0000
+dwBlockPECycle[0285]:0000
+dwBlockPECycle[0286]:0000
+dwBlockPECycle[0287]:0000
+dwBlockPECycle[0288]:0000
+dwBlockPECycle[0289]:0000
+dwBlockPECycle[0290]:0000
+dwBlockPECycle[0291]:0000
+dwBlockPECycle[0292]:0000
+dwBlockPECycle[0293]:0000
+dwBlockPECycle[0294]:0000
+dwBlockPECycle[0295]:0000
+dwBlockPECycle[0296]:0000
+dwBlockPECycle[0297]:0000
+dwBlockPECycle[0298]:0000
+dwBlockPECycle[0299]:0000
+dwBlockPECycle[0300]:0000
+dwBlockPECycle[0301]:0000
+dwBlockPECycle[0302]:0000
+dwBlockPECycle[0303]:0000
+dwBlockPECycle[0304]:0000
+dwBlockPECycle[0305]:0000
+dwBlockPECycle[0306]:0000
+dwBlockPECycle[0307]:0000
+dwBlockPECycle[0308]:0000
+dwBlockPECycle[0309]:0000
+dwBlockPECycle[0310]:0000
+dwBlockPECycle[0311]:0000
+dwBlockPECycle[0312]:0000
+dwBlockPECycle[0313]:0000
+dwBlockPECycle[0314]:0000
+dwBlockPECycle[0315]:0000
+dwBlockPECycle[0316]:0000
+dwBlockPECycle[0317]:0000
+dwBlockPECycle[0318]:0000
+dwBlockPECycle[0319]:0000
+dwBlockPECycle[0320]:0000
+dwBlockPECycle[0321]:0000
+dwBlockPECycle[0322]:0000
+dwBlockPECycle[0323]:0000
+dwBlockPECycle[0324]:0000
+dwBlockPECycle[0325]:0000
+dwBlockPECycle[0326]:0000
+dwBlockPECycle[0327]:0000
+dwBlockPECycle[0328]:0000
+dwBlockPECycle[0329]:0000
+dwBlockPECycle[0330]:0000
+dwBlockPECycle[0331]:0000
+dwBlockPECycle[0332]:0000
+dwBlockPECycle[0333]:0000
+dwBlockPECycle[0334]:0000
+dwBlockPECycle[0335]:0000
+dwBlockPECycle[0336]:0000
+dwBlockPECycle[0337]:0000
+dwBlockPECycle[0338]:0000
+dwBlockPECycle[0339]:0000
+dwBlockPECycle[0340]:0000
+dwBlockPECycle[0341]:0000
+dwBlockPECycle[0342]:0000
+dwBlockPECycle[0343]:0000
+dwBlockPECycle[0344]:0000
+dwBlockPECycle[0345]:0000
+dwBlockPECycle[0346]:0000
+dwBlockPECycle[0347]:0000
+dwBlockPECycle[0348]:0000
+dwBlockPECycle[0349]:0000
+dwBlockPECycle[0350]:0000
+dwBlockPECycle[0351]:0000
+dwBlockPECycle[0352]:0000
+dwBlockPECycle[0353]:0000
+dwBlockPECycle[0354]:0000
+dwBlockPECycle[0355]:0000
+dwBlockPECycle[0356]:0000
+dwBlockPECycle[0357]:0000
+dwBlockPECycle[0358]:0000
+dwBlockPECycle[0359]:0000
+dwBlockPECycle[0360]:0000
+dwBlockPECycle[0361]:0000
+dwBlockPECycle[0362]:0000
+dwBlockPECycle[0363]:0000
+dwBlockPECycle[0364]:0000
+dwBlockPECycle[0365]:0000
+dwBlockPECycle[0366]:0000
+dwBlockPECycle[0367]:0000
+dwBlockPECycle[0368]:0000
+Platform Info:wSLCAreaBlkNum 0
+Ext_CSD[0]   Reserved_0[0-6]:   0x0
+Ext_CSD[7]   Reserved_0[7-14]:  0x0
+Ext_CSD[15]  CMDQ_MODE_EN:     0x00
+Ext_CSD[16]  SECURE_REMOVAL_TYPE: 0x39
+Ext_CSD[17]  PRODUCT_STATE_AWARE: 0x03
+Ext_CSD[18]  MAX_PRE_LOADING:  0x026D8000
+Ext_CSD[22]  PRE_LOADING:      0x00000000
+Ext_CSD[26]  FFU_STATUS:       0x00
+Ext_CSD[27]  Reserved_27:      0x0000
+Ext_CSD[29]  MODE_OP_CODES:    0x00
+Ext_CSD[30]  MODE_CONFIG:      0x00
+Ext_CSD[31]  BARRIER_CTRL:     0x00
+Ext_CSD[32]  FLUSH_CACHE:      0x00
+Ext_CSD[33]  CACHE_CTRL:       0x01
+Ext_CSD[34]  POWER_OFF_NOTIF:  0x00
+Ext_CSD[35]  PACKED_FAIL_IDX:  0x00
+Ext_CSD[36]  PACKED_CMD_STS:   0x00
+Ext_CSD[37]  CONTEST_CONF[0-7]: 0x0
+Ext_CSD[44]  CONTEST_CONF[7-14]:0x0
+Ext_CSD[52]  EXT_PART_ATTR:    0x0000
+Ext_CSD[54]  EXCEPT_EVT_STS:   0x0000
+Ext_CSD[56]  EXCEPT_EVT_CTRL:  0x0000
+Ext_CSD[58]  DYNCAP_NEEDED:    0x00
+Ext_CSD[59]  CLASS_6_CTRL:     0x00
+Ext_CSD[60]  INI_TIMEOUT_EMU: 0x00
+Ext_CSD[61]  DATA_SECTOR_SIZE: 0x00
+Ext_CSD[62]  USE_NATIVE_SEC62: 0x00
+Ext_CSD[63]  NATIVE_SEC_SIZE:  0x00
+Ext_CSD[64]  VENDOR_SPEC[0-7]:  0x1010100
+Ext_CSD[72]  VENDOR_SPEC[8-15]: 0x0
+Ext_CSD[80]  VENDOR_SPEC[16-23]:0x0
+Ext_CSD[88]  VENDOR_SPEC[24-31]:0x0
+Ext_CSD[96]  VENDOR_SPEC[32-39]:0x0
+Ext_CSD[104] VENDOR_SPEC[40-47]:0x0
+Ext_CSD[112] VENDOR_SPEC[48-55]:0x0
+Ext_CSD[120] VENDOR_SPEC[56-63]:0x0
+Ext_CSD[128] Reserved_128:    0x0000
+Ext_CSD[130] CID_CSD_DDR_SUP:  0x01
+Ext_CSD[131] PERIODIC_WAKEUP:  0x00
+Ext_CSD[132] TCASE_SUPPORT:   0x00
+Ext_CSD[133] PROD_STATE_AWARE: 0x00
+Ext_CSD[134] SEC_BAD_BLK_MGMT: 0x00
+Ext_CSD[135] Reserved_135:    0x00
+Ext_CSD[136] ENH_START_ADDR:  0x00000000
+Ext_CSD[140] ENH_SIZE_MULT:   0x00000000
+Ext_CSD[143] GP_SIZE_MULT[0-7]:0x0
+Ext_CSD[151] GP_SIZE_MULT[8-11]:0x00000000
+Ext_CSD[155] PART_SET_COMPLETE:0x00
+Ext_CSD[156] PARTITIONS_ATTR:  0x00
+Ext_CSD[157] MAX_ENH_SIZE_MULT:0x000009B6
+Ext_CSD[160] PARTITIONING_SUP: 0x07
+Ext_CSD[161] HPI_MGMT:         0x00
+Ext_CSD[162] RST_n_FUNCTION:  0x00
+Ext_CSD[163] BKOPS_EN:        0x02
+Ext_CSD[164] BKOPS_START:     0x00
+Ext_CSD[165] SANITIZE_START:  0x00
+Ext_CSD[166] WR_REL_PARAM:    0x15
+Ext_CSD[167] WR_REL_SET:      0x1F
+Ext_CSD[168] RPMB_SIZE_MULT:  0x20
+Ext_CSD[169] FW_CONFIG:       0x00
+Ext_CSD[170] Reserved_170:     0x00
+Ext_CSD[171] USER_WP:          0x00
+Ext_CSD[172] Reserved_172:     0x00
+Ext_CSD[173] BOOT_WP:          0x00
+Ext_CSD[174] BOOT_WP_STATUS:   0x00
+Ext_CSD[175] ERASE_GROUP_DEF:  0x00
+Ext_CSD[176] Reserved_176:     0x00
+Ext_CSD[177] BOOT_BUS_COND:   0x00
+Ext_CSD[178] BOOT_CONFIG_PROT:0x00
+Ext_CSD[179] PARTITION_CONFIG:0x00
+Ext_CSD[180] Reserved_180:     0x00
+Ext_CSD[181] ERASED_MEM_CONT:  0x00
+Ext_CSD[182] Reserved_182:     0x00
+Ext_CSD[183] BUS_WIDTH:        0x00
+Ext_CSD[184] STROBE_SUPPORT:   0x01
+Ext_CSD[185] HS_TIMING:        0x03
+Ext_CSD[186] Reserved_186:     0x00
+Ext_CSD[187] POWER_CLASS:      0x00
+Ext_CSD[188] Reserved_188:     0x00
+Ext_CSD[189] CMD_SET_REV:      0x00
+Ext_CSD[190] Reserved_190:     0x00
+Ext_CSD[191] CMD_SET:          0x00
+Ext_CSD[192] EXTCSD_REV:       0x08
+Ext_CSD[193] Reserved_193:     0x00
+Ext_CSD[194] CSD_STRUCTURE:    0x02
+Ext_CSD[195] Reserved_195:     0x00
+Ext_CSD[196] CARD_TYPE:        0x57
+Ext_CSD[197] DRIVER_STRENGTH:  0x1F
+Ext_CSD[198] OUT_OF_INT_TIME:  0x0A
+Ext_CSD[199] PART_SWITCH_TIME: 0x0A
+Ext_CSD[200] PWR_CL_52_195:    0x00
+Ext_CSD[201] PWR_CL_26_195:    0x00
+Ext_CSD[202] PWR_CL_52_360:    0x00
+Ext_CSD[203] PWR_CL_26_360:    0x00
+Ext_CSD[204] Reserved_204:     0x00
+Ext_CSD[205] MIN_PERF_R_4_26:  0x00
+Ext_CSD[206] MIN_PERF_W_4_26:  0x00
+Ext_CSD[207] MIN_PERF_R_8_26:  0x00
+Ext_CSD[208] MIN_PERF_W_8_26:  0x00
+Ext_CSD[209] MIN_PERF_R_8_52:  0x00
+Ext_CSD[210] MIN_PERF_W_8_52:  0x00
+Ext_CSD[211] SECURE_WP_INFO:   0x01
+Ext_CSD[212] SEC_COUNT:        0x07490000
+Ext_CSD[216] SLEEP_NOTIF_TIME: 0x10
+Ext_CSD[217] S_A_TIMEOUT:      0x16
+Ext_CSD[218] PROD_STATE_TO:    0x0A
+Ext_CSD[219] S_C_VCCQ:         0x0A
+Ext_CSD[220] S_C_VCC:          0x07
+Ext_CSD[221] HC_WP_GRP_SIZE:   0x10
+Ext_CSD[222] REL_WR_SEC_C:     0x01
+Ext_CSD[223] ERASE_TIMEOUT_MULT:0x07
+Ext_CSD[224] HC_ERASE_GRP_SIZE: 0x01
+Ext_CSD[225] ACC_SIZE:          0x06
+Ext_CSD[226] BOOT_SIZE_MULTI:   0xFF
+Ext_CSD[227] Reserved_227:      0x00
+Ext_CSD[228] BOOT_INFO:         0x07
+Ext_CSD[229] SEC_TRIM_MULT:     0xF7
+Ext_CSD[230] SEC_ERASE_MULT:    0xF7
+Ext_CSD[231] SEC_FEATURE_SUP:   0x55
+Ext_CSD[232] TRIM_MULT:         0x05
+Ext_CSD[233] Reserved_233:      0x00
+Ext_CSD[234] PERF_DDR_R_8_52:   0x00
+Ext_CSD[235] PERF_DDR_W_8_52:   0x00
+Ext_CSD[236] PWR_CL_200_130:    0x00
+Ext_CSD[237] PWR_CL_200_195:    0x00
+Ext_CSD[238] PWR_CL_DDR_52_195: 0x00
+Ext_CSD[239] PWR_CL_DDR_52_360: 0x00
+Ext_CSD[240] CACHE_FLUSH_POL:   0x00
+Ext_CSD[241] INI_TIMEOUT_AP:    0x1E
+Ext_CSD[242] CORRECTLY_PRG_SEC: 0x00000000
+Ext_CSD[246] BKOPS_STATUS:      0x00
+Ext_CSD[247] POWER_OFF_LONG_T:  0x3C
+Ext_CSD[248] GENERIC_CMD6_T:    0x0A
+Ext_CSD[249] CACHE_SIZE:        0x00010000
+Ext_CSD[253] PWR_CL_DDR_200_360:0x00
+Ext_CSD[254] FIRMWARE_VERSION:  0x15
+Ext_CSD[262] DEVICE_VERSION:    0x0000
+Ext_CSD[264] OPTIMAL_TRIM_UNIT: 0x01
+Ext_CSD[265] OPTIMAL_WRITE_SIZE: 0x20
+Ext_CSD[266] OPTIMAL_READ_SIZE:  0x00
+Ext_CSD[267] PRE_EOL_INFO:       0x01
+Ext_CSD[268] DEVICE_LIFE_TYP_A: 0x01
+Ext_CSD[269] DEVICE_LIFE_TYP_B: 0x00
+Ext_CSD[270] VENDOR_HEALTH[0-7]:  0x0
+Ext_CSD[278] VENDOR_HEALTH[8-15]: 0x0
+Ext_CSD[286] VENDOR_HEALTH[16-23]:0x0
+Ext_CSD[294] VENDOR_HEALTH[24-31]:0x0
+Ext_CSD[302] FW_SEC_CORRECTLY_PRG:0x00000000
+Ext_CSD[306] Reserved_306:       0x00
+Ext_CSD[307] CMDQ_DEPTH:         0x1F
+Ext_CSD[308] CMDQ_SUPPORT:       0x01
+Ext_CSD[309] Reserved[0-7]:      0x0
+Ext_CSD[317] Reserved[8-15]:     0x0
+Ext_CSD[325] Reserved[16-23]:    0x0
+Ext_CSD[333] Reserved[24-31]:    0x0
+Ext_CSD[341] Reserved[32-39]:    0x0
+Ext_CSD[349] Reserved[40-47]:    0x0
+Ext_CSD[357] Reserved[48-55]:    0x0
+Ext_CSD[365] Reserved[56-63]:    0x0
+Ext_CSD[373] Reserved[64-71]:    0x0
+Ext_CSD[381] Reserved[72-79]:    0x0
+Ext_CSD[389] Reserved[80-87]:    0x0
+Ext_CSD[397] Reserved[88-95]:    0x0
+Ext_CSD[405] Reserved[96-103]:   0x0
+Ext_CSD[413] Reserved[104-111]:  0x0
+Ext_CSD[421] Reserved[112-119]:  0x0
+Ext_CSD[429] Reserved[120-127]:  0x0
+Ext_CSD[437] Reserved[128-135]:  0x0
+Ext_CSD[445] Reserved[136-143]:  0x0
+Ext_CSD[453] Reserved[144-151]:  0x0
+Ext_CSD[461] Reserved[152-159]:  0x0
+Ext_CSD[469] Reserved[160-167]:  0x0
+Ext_CSD[477] Reserved[168-175]:  0x0
+Ext_CSD[485] Reserved_485:       0x00
+Ext_CSD[486] BARRIER_SUPPORT:    0x00
+Ext_CSD[487] FFU_ARG:            0xFFFF8848
+Ext_CSD[491] OP_CODE_TIMEOUT:   0x00
+Ext_CSD[492] FFU_FEATURES:       0x00
+Ext_CSD[493] SUPPORTED_MODES:    0x03
+Ext_CSD[494] EXT_SUPPORT:        0x03
+Ext_CSD[495] LARGE_UNIT_SIZE:    0x07
+Ext_CSD[496] CONTEXT_CAP:        0x05
+Ext_CSD[497] TAG_RES_SIZE:       0x00
+Ext_CSD[498] TAG_UNIT_SIZE:      0x03
+Ext_CSD[499] DATA_TAG_SUPPORT:   0x01
+Ext_CSD[500] MAX_PACKED_WRITES:  0x3F
+Ext_CSD[501] MAX_PACKED_READS:   0x3F
+Ext_CSD[502] BKOPS_SUPPORT:      0x01
+Ext_CSD[503] HPI_FEATURES:       0x01
+Ext_CSD[504] S_CMD_SET:          0x01
+Ext_CSD[505] EXT_SECURITY_ERR:   0x00
+Ext_CSD[506] Reserved_506:       0x0
+Ext_CSD[60] INI_TIMEOUT_EMU:    0ms
+Ext_CSD[198] OUT_OF_INT_TIME:   100ms
+Ext_CSD[199] PART_SWITCH_TIME:  100ms
+Ext_CSD[216] SLEEP_NOTIF_TIME:  655360ms
+Ext_CSD[217] S_A_TIMEOUT:       419.4304ms
+Ext_CSD[218] PROD_STATE_TO:      102400ns
+Ext_CSD[223] ERASE_TIMEOUT:     2100ms
+Ext_CSD[229] SEC_TRIM_TIMEOUT:  518700ms
+Ext_CSD[230] SEC_ERASE_TIMEOUT: 518700ms
+Ext_CSD[232] TRIM_TIMEOUT:       1500ms
+Ext_CSD[241] INI_TIMEOUT_AP:    3000ms
+Ext_CSD[247] POWER_OFF_LONG_T:  600ms
+Ext_CSD[248] GENERIC_CMD6_T:    100ms
+Ext_CSD[491] OP_CODE_TIMEOUT:   0.1us
+Ext_CSD[168] RPMB_SIZE:         4096K
+Ext_CSD[212] SEC_COUNT:         59680.0M
+Ext_CSD[226] BOOT_SIZE:         32640K
+Ext_CSD[220] S_C_VCC:           128uA
+Ext_CSD[219] S_C_VCCQ:          1024uA
+Ext_CSD[189] CMD_SET_REV:       V4.0
+Ext_CSD[192] EXTCSD_REV:        V1.8 (MMC V5.1)
+Ext_CSD[194] CSD_STRUCTURE:    v1.2 (v4.1-5.1)
+Ext_CSD[254-261] FIRMWARE_VERSION: 0x15
+Ext_CSD[267] PRE_EOL_INFO:       Normal
+Ext_CSD[268] LIFE_TIME_TYP_A:    0-10% used
+Ext_CSD[18] MAX_PRE_LOADING: 19888 M
+Ext_CSD[22] PRE_LOADING: 0 M
+Ext_CSD[61] DATA_SECTOR_SIZE: 512 B
+Ext_CSD[63] NATIVE_SECTOR_SIZE: 512 B
+Ext_CSD[157] MAX_ENH_SIZE_MULT: 19888 M
+Ext_CSD[221] HC_WP_GRP_SIZE: 8192 K
+Ext_CSD[224] HC_ERASE_GRP_SIZE: 512 K
+Ext_CSD[225] ACC_SIZE: 16 KB
+Ext_CSD[249] CACHE_SIZE: 65536 KB
+Ext_CSD[264] OPTIMAL_TRIM_UNIT_SIZE: 4 KB
+Ext_CSD[265] OPTIMAL_WRITE_SIZE: 128 KB
+Ext_CSD[266] OPTIMAL_READ_SIZE: 0 KB
+Ext_CSD[495] LARGE_UNIT_SIZE: 8 M
+Ext_CSD[497] TAG_RES_SIZE: 119360 B
+Ext_CSD[498] TAG_UNIT_SIZE: 4096 B
+Ext_CSD[253] PWR_CL_DDR_200_360:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA
+Ext_CSD[200] PWR_CL_52_195:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[201] PWR_CL_26_195:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[202] PWR_CL_52_360:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[203] PWR_CL_26_360:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[236] PWR_CL_200_130:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[237] PWR_CL_200_195:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[238] PWR_CL_DDR_52_195:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[239] PWR_CL_DDR_52_360:  (4 bit bus)Max RMS Current = 65 mA (4 bit bus)Max Peak Current = 130 mA  (8 bit bus)Max RMS Current = 65 mA (8 bit bus)Max Peak Current = 130 mA
+Ext_CSD[16] SECURE_REMOVAL_TYPE:  information removed by an erase of physical memory.  information removed using a vendor defined.
+Ext_CSD[131] PERIODIC_WAKEUP: No wakeups
+Ext_CSD[197] DRIVER_STRENGTH: Type0. Type1. Type2. Type3. Type4.
+Ext_CSD[211] SECURE_WP_INFO: Secure Write Protection is supported by this device. Legacy Write Protection mode.
+Ext_CSD[228] BOOT_INFO: ALT_BOOT_MODE. DDR_BOOT_MODE. HS_BOOT_MODE.
+Ext_CSD[240] CACHE_FLUSH_POLICY: Device flushing policy is not provided by the device.
+Ext_CSD[493] SUPPORTED_MODES: FFU. VSM.
+Ext_CSD[494] EXT_SUPPORT: System code. Non-Persistent.
+Ext_CSD[503] HPI_FEATURES: HPI_SUPPORT.
+Ext_CSD[504] S_CMD_SET: Allocated by MMCA.
+RTMS:EXT_CSD Resul is Pass
+Platform Info: GetTotalWrite_10864 dwLackPagePerBlk = 0, dwRes=0x0
+Platform Info: GetTotalWrite_10882 lwBlockPECycleTotal =  10 dwPagePerBlk =  12672 wSectOfPage = 32 dwLackPagePerBlk = 0
+Platform Info: GetTotalWrite_10891 lwTLCDeegreOfWearTotal =  0 dwPagePerBlk =  12672 wSectOfPage = 32 dwLackPagePerBlk = 0
+Info: GetNandTotalWrite(FW) f  lwNandTotalWrite(RTMS) f lwTlcNandTotalWrite(RTMS) f
+RTMS_INFO:Complete a data save. File Size is 2813
+RTMS_Result:PASS
+RTMS_Code: 0
+Platform Keys: g_dwWriteTimeOutCnt = 0
+Platform Keys: g_dwReadTimeOutCnt = 0
+Platform Keys: g_dwWriteCrcCnt = 0
+Platform Keys: g_dwReadCrcCnt = 0
+Platform Keys: VCC = 3343 mv
+Platform Keys: VCCQ = 1840 mv
