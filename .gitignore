@@ -30,6 +30,15 @@ Log-Download/*.png
 # 下载记录
 Log-Download/downloaded_tasks.txt
 
+# 数据库分析 - 生成文件
+database-analysis/*.db
+database-analysis/*.db-wal
+database-analysis/*.db-shm
+database-analysis/reports/
+database-analysis/extracted/
+database-analysis/signals/
+database-analysis/config.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile log_downloader.py)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: 优化 LVTS 日志下载器代码质量和稳定性 *)",
+      "Bash(python -c ' *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(git commit -m 'fix: 优化登录验证逻辑、修复下载功能失效问题、提升代码质量 *)",
+      "Bash(git push *)",
+      "Bash(python log_downloader.py --help)",
+      "Bash(python log_downloader.py --once --visible)",
+      "Bash(git commit -m 'refactor: 精简配置文件，提升代码可维护性 *)",
+      "Bash(git commit -m 'fix: 删除死代码并修复 navigate_to_task_list 方法逻辑 *)",
+      "Bash(mkdir -p \"d:/Defective-Product-Analysis/database-analysis/src\" \"d:/Defective-Product-Analysis/database-analysis/logs\" \"d:/Defective-Product-Analysis/database-analysis/queries\" \"d:/Defective-Product-Analysis/database-analysis/tests\")",
+      "Bash(pip install *)",
+      "Bash(python main.py --parse --file \"./logs/RTMS_RTMSLOG_0.txt\")",
+      "Bash(python main.py --list-devices)",
+      "Bash(python main.py --list-sections)",
+      "Bash(python main.py --export)"
+    ],
+    "additionalDirectories": [
+      "d:\\Defective-Product-Analysis\\database-analysis"
+    ]
+  }
+}

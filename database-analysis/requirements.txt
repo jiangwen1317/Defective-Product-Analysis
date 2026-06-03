@@ -1,0 +1,5 @@
+# EMMC 测试日志解析与分析系统 - Python 依赖
+# 安装命令：pip install -r requirements.txt
+
+openpyxl>=3.1.0          # Excel (.xlsx) 读写，RMA 报告导出
+customtkinter>=5.2.0     # 现代化 GUI 界面
