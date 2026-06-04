@@ -128,10 +128,12 @@ class RMAReportGenerator:
 
         # 表头
         headers = [
-            "序号", "设备名", "固件版本", "MP工具版本", "Flash ID",
-            "原始坏块", "Cycles", "综合结果", "Fail Section",
+            "序号", "设备名", "固件版本", "主控", "容量(MB)", "容量(扇区)",
+            "PNM料号", "Flash ID", "MP工具版本",
+            "原始坏块", "Cycles", "TestCycle", "TestCase",
+            "综合结果", "RTMS结果", "RTMS错误码", "Fail Section",
             "WAI", "SLC PE Min", "SLC PE Max", "TLC PE Min", "TLC PE Max",
-            "新增坏块", "解析状态", "解析时间",
+            "新增坏块", "LVTS任务链接", "解析状态", "解析时间",
         ]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -146,11 +148,19 @@ class RMAReportGenerator:
                 row_idx - 1,
                 s.get("device_name", ""),
                 s.get("fw_version", ""),
-                s.get("mp_tool_version", ""),
+                s.get("controller", ""),
+                s.get("capacity_mb", ""),
+                s.get("capacity_sectors", ""),
+                s.get("part_number", ""),
                 s.get("flash_id", ""),
+                s.get("mp_tool_version", ""),
                 s.get("original_bad_block", ""),
                 s.get("cycles", ""),
+                s.get("test_cycle", ""),
+                s.get("test_case", ""),
                 s.get("overall_result", ""),
+                s.get("rtms_result", ""),
+                s.get("rtms_code", ""),
                 s.get("fail_sections", ""),
                 s.get("wai", ""),
                 s.get("slc_pe_min", ""),
@@ -158,6 +168,7 @@ class RMAReportGenerator:
                 s.get("tlc_pe_min", ""),
                 s.get("tlc_pe_max", ""),
                 s.get("increase_bad_block", ""),
+                s.get("task_link", ""),
                 s.get("parse_status", ""),
                 s.get("parsed_at", ""),
             ]
@@ -167,11 +178,18 @@ class RMAReportGenerator:
                 cell.border = _THIN_BORDER
 
             # 结果着色
-            result_cell = ws.cell(row=row_idx, column=8)
+            result_cell = ws.cell(row=row_idx, column=14)  # 综合结果列
             if s.get("overall_result") == "Fail":
                 result_cell.fill = _FAIL_FILL
             elif s.get("overall_result") == "Pass":
                 result_cell.fill = _PASS_FILL
+            # RTMS结果着色
+            rtms_cell = ws.cell(row=row_idx, column=15)
+            rtms_val = (s.get("rtms_result") or "").upper()
+            if "FAIL" in rtms_val:
+                rtms_cell.fill = _FAIL_FILL
+            elif "PASS" in rtms_val:
+                rtms_cell.fill = _PASS_FILL
 
         # 列宽自适应
         for col in range(1, len(headers) + 1):

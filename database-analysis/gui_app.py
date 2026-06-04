@@ -29,7 +29,6 @@ if _SCRIPT_DIR not in sys.path:
 from database import DatabaseConnection, MetricsRepository
 from log_parser import LogParser
 from schema import init_database
-from sql_presets import SQL_PRESETS
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +102,8 @@ class App(ctk.CTk):
         # 创建各标签页
         self._build_parse_tab(self._tabview.add("📥 数据导入"))
         self._build_query_tab(self._tabview.add("🔍 数据查询"))
-        self._build_wear_tab(self._tabview.add("📈 磨损曲线"))
+        self._build_wear_tab(self._tabview.add("📈 图表绘制"))
         self._build_compare_tab(self._tabview.add("⚖️ 指标对比"))
-        self._build_sql_tab(self._tabview.add("📋 预设查询"))
         self._build_report_tab(self._tabview.add("📊 报告导出"))
 
     # ================================================================
@@ -469,150 +467,268 @@ class App(ctk.CTk):
         self._query_count_label.configure(text=f"查询结果: {row_count} 条指标（来自 {len(summaries)} 条记录）")
 
     # ================================================================
-    # Tab: 磨损曲线
+    # Tab: 通用图表绘制
     # ================================================================
 
+    _CHART_COLORS = [
+        '#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6',
+        '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
+    ]
+    _CHART_TYPES = ["自动", "折线图", "柱状图", "散点图", "阶梯图", "面积图"]
+
     def _build_wear_tab(self, parent: ctk.CTkFrame) -> None:
-        """构建磨损曲线标签页。"""
+        """构建通用图表绘制标签页。"""
         # 输入区
         input_frame = ctk.CTkFrame(parent)
         input_frame.pack(fill="x", padx=10, pady=(10, 5))
 
-        ctk.CTkLabel(input_frame, text="Block PE Cycle 磨损曲线",
+        ctk.CTkLabel(input_frame, text="通用指标图表绘制",
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
 
-        row = ctk.CTkFrame(input_frame, fg_color="transparent")
-        row.pack(fill="x", padx=15, pady=(0, 12))
+        # 单行控制
+        ctrl = ctk.CTkFrame(input_frame, fg_color="transparent")
+        ctrl.pack(fill="x", padx=15, pady=(0, 5))
 
-        ctk.CTkLabel(row, text="记录 ID:").pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(ctrl, text="记录 ID:").pack(side="left", padx=(0, 5))
         self._wear_id = ctk.StringVar()
-        ctk.CTkEntry(row, textvariable=self._wear_id, width=100).pack(side="left", padx=(0, 15))
+        ctk.CTkEntry(ctrl, textvariable=self._wear_id, width=140,
+                     placeholder_text="8 或 8,9,10").pack(side="left", padx=(0, 12))
 
-        ctk.CTkButton(row, text="📈 绘制曲线", width=120, command=self._draw_wear_curve).pack(side="left", padx=(0, 10))
-        ctk.CTkButton(row, text="🗑️ 清除", width=80, command=self._clear_wear_curve).pack(side="left")
+        ctk.CTkLabel(ctrl, text="指标名:").pack(side="left", padx=(0, 5))
+        self._chart_metric_key = ctk.StringVar(value="dwBlockPECycle")
+        ctk.CTkEntry(ctrl, textvariable=self._chart_metric_key, width=200,
+                     placeholder_text="输入指标关键字").pack(side="left", padx=(0, 12))
 
-        self._wear_info_label = ctk.CTkLabel(input_frame, text="", font=ctk.CTkFont(size=12), text_color="gray")
-        self._wear_info_label.pack(anchor="w", padx=15, pady=(0, 10))
+        ctk.CTkLabel(ctrl, text="图表:").pack(side="left", padx=(0, 5))
+        self._chart_type = ctk.StringVar(value="自动")
+        ctk.CTkComboBox(ctrl, variable=self._chart_type,
+                        values=self._CHART_TYPES, width=90).pack(side="left", padx=(0, 12))
+
+        ctk.CTkButton(ctrl, text="📈 绘制", width=90, command=self._draw_chart).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(ctrl, text="🗑️ 清除", width=70, command=self._clear_chart).pack(side="left")
+
+        self._chart_info_label = ctk.CTkLabel(
+            input_frame,
+            text="提示: 输入记录 ID 和指标名，点击绘制。支持索引序列(dwBlockPECycle[N])和标量值(WAI)两种数据模式",
+            font=ctk.CTkFont(size=12), text_color="gray")
+        self._chart_info_label.pack(anchor="w", padx=15, pady=(0, 10))
 
         # 图表区
         chart_frame = ctk.CTkFrame(parent)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
 
-        # 创建 matplotlib Figure
-        self._wear_fig = Figure(figsize=(10, 5), dpi=100)
-        self._wear_ax = self._wear_fig.add_subplot(111)
-        self._wear_ax.set_xlabel("Block Index")
-        self._wear_ax.set_ylabel("PE Cycle")
-        self._wear_ax.set_title("Block PE Cycle Wear Curve")
-        self._wear_ax.grid(True, alpha=0.3)
+        self._chart_fig = Figure(figsize=(10, 5), dpi=100)
+        self._chart_ax = self._chart_fig.add_subplot(111)
+        self._chart_ax.set_xlabel("Index")
+        self._chart_ax.set_ylabel("Value")
+        self._chart_ax.set_title("Metric Chart")
+        self._chart_ax.grid(True, alpha=0.3)
 
-        self._wear_canvas = FigureCanvasTkAgg(self._wear_fig, master=chart_frame)
-        self._wear_canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
+        self._chart_canvas = FigureCanvasTkAgg(self._chart_fig, master=chart_frame)
+        self._chart_canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
 
-        # matplotlib 工具栏
         toolbar_frame = ctk.CTkFrame(chart_frame, height=40, fg_color="transparent")
         toolbar_frame.pack(fill="x", padx=5, pady=(0, 5))
-        self._wear_toolbar = NavigationToolbar2Tk(self._wear_canvas, toolbar_frame)
-        self._wear_toolbar.update()
+        self._chart_toolbar = NavigationToolbar2Tk(self._chart_canvas, toolbar_frame)
+        self._chart_toolbar.update()
 
-    def _draw_wear_curve(self) -> None:
-        """绘制 Block PE Cycle 磨损曲线。"""
-        id_str = self._wear_id.get().strip()
-        if not id_str or not id_str.isdigit():
-            messagebox.showwarning("提示", "请输入有效的记录 ID")
+    def _parse_ids(self, raw: str) -> list[int]:
+        """解析逗号分隔的 ID 字符串。"""
+        ids: list[int] = []
+        for part in raw.replace("，", ",").split(","):
+            part = part.strip()
+            if part.isdigit():
+                ids.append(int(part))
+        return ids
+
+    @staticmethod
+    def _resolve_draw_mode(chart_type: str, has_indexed: bool, multi: bool) -> str:
+        """确定实际绘图模式。"""
+        if chart_type == "自动":
+            if has_indexed and multi:
+                return "line"
+            return "bar"
+        type_map = {
+            "折线图": "line", "柱状图": "bar", "散点图": "scatter",
+            "阶梯图": "step", "面积图": "area",
+        }
+        return type_map.get(chart_type, "line")
+
+    def _plot_indexed_series(self, ax, xs, ys, color, label, draw_mode, max_v, avg_v, multi, idx, total_recs):
+        """绘制单条索引序列数据。"""
+        if draw_mode == "line":
+            ax.plot(xs, ys, color=color, linewidth=1.2, alpha=0.85, label=label)
+            if avg_v > 0:
+                ax.axhline(y=avg_v, color=color, linestyle='--', linewidth=1, alpha=0.5)
+        elif draw_mode == "step":
+            ax.step(xs, ys, color=color, linewidth=1.2, alpha=0.85, where='post', label=label)
+            if avg_v > 0:
+                ax.axhline(y=avg_v, color=color, linestyle='--', linewidth=1, alpha=0.5)
+        elif draw_mode == "area":
+            ax.fill_between(xs, ys, alpha=0.3, color=color, label=label)
+            ax.plot(xs, ys, color=color, linewidth=1, alpha=0.8)
+        elif draw_mode == "scatter":
+            ax.scatter(xs, ys, color=color, s=12, alpha=0.7, label=label)
+        else:  # bar
+            bar_colors = ['#e74c3c' if v == max_v and v > 0 else
+                          color if v > 0 else '#bdc3c7' for v in ys]
+            width = 0.8 if not multi else max(0.1, 0.8 / total_recs)
+            offset = idx * width if multi else 0
+            ax.bar([x + offset for x in xs], ys, color=bar_colors,
+                   width=width, alpha=0.85, label=label)
+            if avg_v > 0 and not multi:
+                ax.axhline(y=avg_v, color='#f39c12', linestyle='--',
+                          linewidth=1.5, label=f'Avg: {avg_v:.2f}')
+
+    def _draw_chart(self) -> None:
+        """通用图表绘制，支持索引序列和标量两种数据模式， 6 种图表类型。"""
+        ids = self._parse_ids(self._wear_id.get().strip())
+        metric_key = self._chart_metric_key.get().strip()
+        chart_type = self._chart_type.get()
+
+        if not ids:
+            messagebox.showwarning("提示", "请输入记录 ID")
+            return
+        if not metric_key:
+            messagebox.showwarning("提示", "请输入指标名")
             return
 
-        summary_id = int(id_str)
         repo = MetricsRepository(self._db)
 
+        # 收集数据
+        records: list[dict] = []
         with self._db.connect() as conn:
-            # 获取记录信息
-            summary = None
-            for s in repo.get_summaries(conn, limit=500):
-                if s["id"] == summary_id:
-                    summary = s
-                    break
+            all_summaries = {s["id"]: s for s in repo.get_summaries(conn, limit=500)}
 
-            if summary is None:
-                messagebox.showwarning("提示", f"未找到 ID={summary_id} 的记录")
-                return
+            for sid in ids:
+                summary = all_summaries.get(sid)
+                if summary is None:
+                    continue
+                metrics = repo.get_metrics(conn, summary_id=sid, metric_key=metric_key)
 
-            # 查询 dwBlockPECycle 指标
-            metrics = repo.get_metrics(conn, summary_id=summary_id, metric_key="dwBlockPECycle")
+                indexed: list[tuple[int, float]] = []
+                scalar_val: float | None = None
 
-        if not metrics:
-            messagebox.showinfo("提示", "该记录中未找到 dwBlockPECycle 数据")
+                for m in metrics:
+                    nv = m.get("num_value")
+                    if nv is None:
+                        continue
+                    if m.get("array_index") is not None:
+                        try:
+                            idx = int(m["array_index"])
+                            indexed.append((idx, float(nv)))
+                        except (ValueError, TypeError):
+                            pass
+                    elif scalar_val is None:
+                        scalar_val = float(nv)
+
+                if indexed:
+                    indexed.sort(key=lambda x: x[0])
+                    records.append({"summary": summary, "mode": "indexed", "data": indexed})
+                elif scalar_val is not None:
+                    records.append({"summary": summary, "mode": "scalar", "data": scalar_val})
+
+        if not records:
+            messagebox.showinfo("提示", f"未找到指标 '{metric_key}' 的有效数据")
             return
 
-        # 按 array_index 排序
-        pe_data = []
-        for m in metrics:
-            if m.get("array_index") is not None:
-                try:
-                    block_idx = int(m["array_index"])
-                    pe_val = int(m["num_value"]) if m.get("num_value") is not None else 0
-                    pe_data.append((block_idx, pe_val))
-                except (ValueError, TypeError):
-                    pass
-
-        if not pe_data:
-            messagebox.showinfo("提示", "dwBlockPECycle 数据无有效的块索引")
-            return
-
-        pe_data.sort(key=lambda x: x[0])
-        block_indices = [d[0] for d in pe_data]
-        pe_values = [d[1] for d in pe_data]
-
-        # 统计
-        total_blocks = len(pe_values)
-        max_pe = max(pe_values)
-        min_pe = min(pe_values)
-        avg_pe = sum(pe_values) / total_blocks if total_blocks > 0 else 0
-        non_zero = sum(1 for v in pe_values if v > 0)
-
-        # 更新信息标签
-        self._wear_info_label.configure(
-            text=f"设备: {summary.get('device_name', '')}  |  "
-                 f"总块数: {total_blocks}  |  非零: {non_zero}  |  "
-                 f"Max PE: {max_pe}  |  Min PE: {min_pe}  |  Avg PE: {avg_pe:.2f}"
-        )
+        has_indexed = any(r["mode"] == "indexed" for r in records)
+        multi = len(records) > 1
+        draw_mode = self._resolve_draw_mode(chart_type, has_indexed, multi)
 
         # 绘制
-        self._wear_ax.clear()
-        self._wear_ax.set_xlabel("Block Index", fontsize=11)
-        self._wear_ax.set_ylabel("PE Cycle", fontsize=11)
-        self._wear_ax.set_title(
-            f"Block PE Cycle Wear Curve — {summary.get('device_name', '')} "
-            f"(FW: {summary.get('fw_version', '')[:30]})",
-            fontsize=12,
-        )
-        self._wear_ax.grid(True, alpha=0.3)
+        self._chart_ax.clear()
+        self._chart_ax.grid(True, alpha=0.3)
+        info_parts: list[str] = []
 
-        # 柱状图 + 均值线
-        colors = ['#e74c3c' if v == max_pe and v > 0 else
-                  '#2ecc71' if v > 0 else
-                  '#bdc3c7'
-                  for v in pe_values]
-        self._wear_ax.bar(block_indices, pe_values, color=colors, width=0.8, alpha=0.85)
+        if has_indexed:
+            # === 索引序列模式 ===
+            self._chart_ax.set_xlabel("Index", fontsize=11)
+            self._chart_ax.set_ylabel(metric_key, fontsize=11)
+            indexed_recs = [r for r in records if r["mode"] == "indexed"]
 
-        if avg_pe > 0:
-            self._wear_ax.axhline(y=avg_pe, color='#f39c12', linestyle='--', linewidth=1.5,
-                                  label=f'Avg: {avg_pe:.2f}')
-            self._wear_ax.legend(loc='upper left')
+            for i, rec in enumerate(indexed_recs):
+                s = rec["summary"]
+                data = rec["data"]
+                xs = [d[0] for d in data]
+                ys = [d[1] for d in data]
+                color = self._CHART_COLORS[i % len(self._CHART_COLORS)]
 
-        self._wear_fig.tight_layout()
-        self._wear_canvas.draw()
+                dev = s.get("device_name", "") or ""
+                fw = (s.get("fw_version", "") or "")[:20]
+                label = f"ID={s['id']} {dev} ({fw})"
 
-    def _clear_wear_curve(self) -> None:
-        """清除磨损曲线图表。"""
-        self._wear_ax.clear()
-        self._wear_ax.set_xlabel("Block Index")
-        self._wear_ax.set_ylabel("PE Cycle")
-        self._wear_ax.set_title("Block PE Cycle Wear Curve")
-        self._wear_ax.grid(True, alpha=0.3)
-        self._wear_fig.tight_layout()
-        self._wear_canvas.draw()
-        self._wear_info_label.configure(text="")
+                total = len(ys)
+                max_v = max(ys)
+                min_v = min(ys)
+                avg_v = sum(ys) / total
+                non_zero = sum(1 for v in ys if v > 0)
+
+                self._plot_indexed_series(
+                    self._chart_ax, xs, ys, color, label, draw_mode,
+                    max_v, avg_v, multi, i, len(indexed_recs))
+
+                info_parts.append(
+                    f"[{s['id']}] {dev}  n={total} 非零={non_zero}  "
+                    f"Max={max_v:.4g} Min={min_v:.4g} Avg={avg_v:.4g}"
+                )
+
+            title_suffix = f"({len(records)} records)" if multi else \
+                f"— {records[0]['summary'].get('device_name', '')}"
+            self._chart_ax.set_title(f"{metric_key} {title_suffix}", fontsize=12)
+
+        else:
+            # === 标量对比模式 ===
+            self._chart_ax.set_xlabel("Record", fontsize=11)
+            self._chart_ax.set_ylabel(metric_key, fontsize=11)
+
+            labels: list[str] = []
+            values: list[float] = []
+            colors: list[str] = []
+
+            for i, rec in enumerate(records):
+                s = rec["summary"]
+                dev = s.get("device_name", "") or ""
+                labels.append(f"ID={s['id']}\n{dev}")
+                values.append(rec["data"])
+                colors.append(self._CHART_COLORS[i % len(self._CHART_COLORS)])
+                info_parts.append(f"[{s['id']}] {dev}  {metric_key}={rec['data']:.4g}")
+
+            x_pos = list(range(len(values)))
+            if draw_mode == "scatter":
+                self._chart_ax.scatter(x_pos, values, color=colors, s=80, zorder=3)
+            elif draw_mode in ("line", "step"):
+                style = 'steps-mid' if draw_mode == "step" else 'default'
+                self._chart_ax.plot(x_pos, values, color=self._CHART_COLORS[0],
+                                    marker='o', linewidth=1.5, markersize=8,
+                                    drawstyle=style)
+            elif draw_mode == "area":
+                self._chart_ax.bar(x_pos, values, color=colors, alpha=0.5, width=0.6)
+                self._chart_ax.plot(x_pos, values, color=self._CHART_COLORS[0],
+                                    marker='o', linewidth=1.5, markersize=6)
+            else:  # bar
+                self._chart_ax.bar(x_pos, values, color=colors, alpha=0.85, width=0.6)
+
+            self._chart_ax.set_xticks(x_pos)
+            self._chart_ax.set_xticklabels(labels, fontsize=9)
+            self._chart_ax.set_title(f"{metric_key} Comparison", fontsize=12)
+
+        self._chart_ax.legend(loc='best', fontsize=9, framealpha=0.8)
+        self._chart_fig.tight_layout()
+        self._chart_canvas.draw()
+        self._chart_info_label.configure(text="\n".join(info_parts))
+
+    def _clear_chart(self) -> None:
+        """清除图表。"""
+        self._chart_ax.clear()
+        self._chart_ax.set_xlabel("Index")
+        self._chart_ax.set_ylabel("Value")
+        self._chart_ax.set_title("Metric Chart")
+        self._chart_ax.grid(True, alpha=0.3)
+        self._chart_fig.tight_layout()
+        self._chart_canvas.draw()
+        self._chart_info_label.configure(
+            text="提示: 输入记录 ID 和指标名，点击绘制。支持索引序列和标量值两种数据模式")
 
     # ================================================================
     # Tab 3: 指标对比
@@ -698,101 +814,7 @@ class App(ctk.CTk):
         self._compare_count_label.configure(text=f"对比结果: {len(results)} 项指标")
 
     # ================================================================
-    # Tab 4: 预设查询
-    # ================================================================
-
-    def _build_sql_tab(self, parent: ctk.CTkFrame) -> None:
-        """构建预设查询标签页。"""
-        # 预设选择
-        select_frame = ctk.CTkFrame(parent)
-        select_frame.pack(fill="x", padx=10, pady=(10, 5))
-
-        ctk.CTkLabel(select_frame, text="选择预设查询", font=ctk.CTkFont(size=14, weight="bold")).pack(
-            anchor="w", padx=15, pady=(10, 5)
-        )
-
-        row = ctk.CTkFrame(select_frame, fg_color="transparent")
-        row.pack(fill="x", padx=15, pady=(0, 12))
-
-        preset_names = list(SQL_PRESETS.keys())
-        self._sql_preset = ctk.StringVar(value=preset_names[0] if preset_names else "")
-
-        ctk.CTkComboBox(row, variable=self._sql_preset, values=preset_names, width=250,
-                          command=self._on_preset_change).pack(side="left", padx=(0, 10))
-
-        ctk.CTkLabel(row, text="参数:").pack(side="left", padx=(0, 5))
-        self._sql_params = ctk.StringVar()
-        ctk.CTkEntry(row, textvariable=self._sql_params, width=250).pack(side="left", padx=(0, 10))
-
-        ctk.CTkButton(row, text="▶ 执行", width=100, command=self._do_sql).pack(side="left")
-
-        self._sql_desc_label = ctk.CTkLabel(select_frame, text="", font=ctk.CTkFont(size=12), text_color="gray")
-        self._sql_desc_label.pack(anchor="w", padx=15, pady=(0, 10))
-        self._on_preset_change(self._sql_preset.get())
-
-        # 结果
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
-
-        self._sql_count_label = ctk.CTkLabel(result_frame, text="查询结果", font=ctk.CTkFont(size=14, weight="bold"))
-        self._sql_count_label.pack(anchor="w", padx=15, pady=(10, 5))
-
-        tree_frame = ctk.CTkFrame(result_frame, fg_color="transparent")
-        tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        self._sql_tree = ttk.Treeview(tree_frame, show="headings", height=20)
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self._sql_tree.yview)
-        self._sql_tree.configure(yscrollcommand=scrollbar.set)
-        self._sql_tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-    def _on_preset_change(self, name: str) -> None:
-        preset = SQL_PRESETS.get(name, {})
-        desc = preset.get("description", "")
-        params = preset.get("params", [])
-        hint = f"需要参数: {', '.join(params)}" if params else "无需参数"
-        self._sql_desc_label.configure(text=f"{desc}（{hint}）")
-
-    def _do_sql(self) -> None:
-        preset_name = self._sql_preset.get()
-        preset = SQL_PRESETS.get(preset_name)
-        if not preset:
-            return
-
-        sql = preset["sql"]
-        params_str = self._sql_params.get().strip()
-        params = [p.strip() for p in params_str.split(",")] if params_str else []
-
-        with self._db.connect() as conn:
-            try:
-                rows = conn.execute(sql, params).fetchall()
-            except Exception as exc:
-                messagebox.showerror("SQL 执行失败", str(exc))
-                return
-
-        # 清空旧数据
-        for item in self._sql_tree.get_children():
-            self._sql_tree.delete(item)
-
-        if not rows:
-            self._sql_count_label.configure(text="查询结果: 无数据")
-            return
-
-        # 动态列
-        columns = tuple(rows[0].keys())
-        self._sql_tree["columns"] = columns
-        for col in columns:
-            self._sql_tree.heading(col, text=col)
-            self._sql_tree.column(col, width=max(80, min(200, len(col) * 12)), minwidth=50)
-
-        for row in rows:
-            values = [row[col] if row[col] is not None else "" for col in columns]
-            self._sql_tree.insert("", "end", values=values)
-
-        self._sql_count_label.configure(text=f"查询结果: {len(rows)} 条记录")
-
-    # ================================================================
-    # Tab 5: 报告导出
+    # Tab 4: 报告导出
     # ================================================================
 
     def _build_report_tab(self, parent: ctk.CTkFrame) -> None:

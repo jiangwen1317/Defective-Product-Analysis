@@ -7,7 +7,6 @@ EMMC 测试日志解析与分析系统 - CLI 入口
   query     查询数据
   compare   对比分析
   report    导出 RMA 报告
-  sql       执行预设 SQL 查询
   watch     启动信号文件监听服务
 
 用法示例：
@@ -18,7 +17,6 @@ EMMC 测试日志解析与分析系统 - CLI 入口
   python main.py query --result Fail
   python main.py compare --ids 1,5 --section Wear_Detection
   python main.py report --output report.xlsx
-  python main.py sql --preset fail_records
   python main.py watch --signal-dir D:/signals/
 """
 import argparse
@@ -386,64 +384,6 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(f"报告已生成: {result_path}")
 
 
-def cmd_sql(args: argparse.Namespace) -> None:
-    """执行预设 SQL 查询。"""
-    from sql_presets import SQL_PRESETS
-
-    config = load_config(args.config)
-    db_path = get_db_path(config)
-    db = DatabaseConnection(db_path)
-
-    preset_name = args.preset
-    if preset_name == "list":
-        print("\n可用的预设查询：")
-        for name, desc in SQL_PRESETS.items():
-            if isinstance(desc, dict):
-                print(f"  {name:<30} - {desc.get('description', '')}")
-            else:
-                print(f"  {name:<30}")
-        return
-
-    preset = SQL_PRESETS.get(preset_name)
-    if preset is None:
-        print(f"未知的预设查询: {preset_name}")
-        print("使用 'python main.py sql --preset list' 查看可用预设")
-        return
-
-    sql = preset["sql"]
-    params: list = []
-    if args.params:
-        params = [p.strip() for p in args.params.split(",")]
-    elif preset.get("params"):
-        print(f"此预设需要参数: {', '.join(preset['params'])}")
-        print(f"用法: python main.py sql --preset {preset_name} --params '值1,值2'")
-        return
-
-    with db.connect() as conn:
-        try:
-            rows = conn.execute(sql, params).fetchall()
-        except Exception as exc:
-            print(f"SQL 执行失败: {exc}")
-            print(f"SQL: {sql}")
-            if params:
-                print(f"参数: {params}")
-            return
-
-    if not rows:
-        print("查询结果为空")
-        return
-
-    # 打印结果
-    columns = rows[0].keys() if hasattr(rows[0], "keys") else [str(i) for i in range(len(rows[0]))]
-    print(f"\n{'  |  '.join(columns)}")
-    print("-" * (len(columns) * 20))
-    for row in rows:
-        values = [str(row[col]) if row[col] is not None else "" for col in columns]
-        print("  |  ".join(values))
-
-    print(f"\n共 {len(rows)} 条记录")
-
-
 def cmd_watch(args: argparse.Namespace) -> None:
     """启动信号文件监听服务。"""
     from file_watcher import FileWatcher
@@ -513,11 +453,6 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--device", help="按设备名过滤")
     report_parser.add_argument("--fw", help="按固件版本过滤")
 
-    # sql
-    sql_parser = subparsers.add_parser("sql", help="执行预设 SQL 查询")
-    sql_parser.add_argument("--preset", required=True, help="预设查询名称（list 查看所有）")
-    sql_parser.add_argument("--params", help="查询参数，逗号分隔")
-
     # watch
     watch_parser = subparsers.add_parser("watch", help="启动信号文件监听服务")
     watch_parser.add_argument("--signal-dir", help="信号文件目录")
@@ -532,7 +467,6 @@ _COMMAND_MAP = {
     "query": cmd_query,
     "compare": cmd_compare,
     "report": cmd_report,
-    "sql": cmd_sql,
     "watch": cmd_watch,
 }
 
