@@ -2,9 +2,9 @@
 EMMC RTMS 测试日志解析引擎
 
 将半结构化的 RTMS 日志文件解析为结构化的 ParseResult 对象。
-包含 Section 分块、KV 提取、数值转换、Hex Dump 跳过等完整解析流程。
+采用扁平化逐行分类解析策略，直接产出 MetricEntry 列表。
 
-错误隔离原则：单文件/单Section/单KV 解析失败不中断整体流程。
+错误隔离原则：单文件/单行 解析失败不中断整体流程。
 """
 import os
 import re
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 class MetricEntry:
     """单个 KV 指标。"""
 
-    section: str            # 所属 Section（如 "Wear_Detection"）
-    key_raw: str            # 原始键名（如 "[SLC] WearGap"）
-    key: str                # 清洗后键名（如 "WearGap"）
+    section: str            # 所属 Section（如 "header"、"Wear_Detection"）
+    key_raw: str            # 原始键名（如 "bFWVersion[64]"）
+    key: str                # 清洗后键名（如 "bFWVersion"）
     raw_value: str          # 原始值字符串
     num_value: Optional[float] = None  # 数值（无法转换时为 None）
     value_type: str = "string"         # hex/decimal/float/string
@@ -52,7 +52,7 @@ class ParseResult:
     device_name: Optional[str] = None
     device_tool_name: Optional[str] = None
     device_config_name: Optional[str] = None
-    # Start of test 关键字段
+    # 关键字段
     fw_version: Optional[str] = None
     mp_tool_version: Optional[str] = None
     flash_id: Optional[str] = None
@@ -92,47 +92,18 @@ class ParseResult:
 # 正则模式常量
 # ============================================================
 
-# Section Header：顶格、非缩进、冒号结尾
-# 匹配 "Start of test:", "End of test:", "Wear_Detection:", "GM/BIT_comparison_garbage:" 等
-_RE_SECTION_HEADER = re.compile(r'^([A-Za-z][\w/]*(?:\s+of\s+\w+)?(?:_[\w]+)*)\s*:\s*$')
-
-# 顶层 KV：无缩进，Key 用空格 padding 对齐，冒号分隔
-# "Device_Name              :DM3720.012.13"
-_RE_TOP_KV = re.compile(r'^([A-Za-z_]\w*)\s+:(.*)$')
-
-# 紧凑 KV：无空格填充，键名支持数组下标
-# "Cycles:0"
+# 紧凑 KV：键名支持数组下标，允许键名与冒号间有 padding 空格
+# "Device_Name:DM3720.026.04"
+# "WAI                    :161.136"
 # "dwBlockPECycle[0000]:0000"
-_RE_COMPACT_KV = re.compile(r'^([A-Za-z_][\w\[\]]+):(.+)$')
+_RE_COMPACT_KV = re.compile(r'^([A-Za-z_][\w\[\]]+)\s*:(.+)$')
 
-# 缩进 KV：4 空格或 Tab 缩进
-# "    wPdmPostCnt            :0x0001"
-# "\twPdmPostCnt            :0x0001"
-# "    dwFreeTimeCollectFailCnt:0x00000000"（key与冒号间无空格）
-# 键名仅允许编程标识符字符（\w/[]/()）和可选前缀 [XXX]，禁止任意空格
-_RE_INDENT_KV = re.compile(r'^(?:    |\t)(?:\[([A-Z]+)\] )?([\w\[\]\(\)]+?)\s*:(.*)$')
+# 内联测试结果：SectionName:Pass 或 SectionName:Fail
+# "Wear_Detection:Pass"
+# "GM/BIT_comparison_garbage:Pass"
+_RE_INLINE_SECTION_RESULT = re.compile(r'^([\w/]+(?:_[\w]+)*):(Pass|Fail)\s*$')
 
-# Tab 缩进的 Result
-# "\tResult                 :Pass!"
-_RE_TAB_RESULT = re.compile(r'^\t(Result)\s*:(.*)$')
-
-# 带前缀的键名：[SLC] WearGap
-_RE_PREFIX = re.compile(r'^\[([A-Z]+)\]\s*(.+)$')
-
-# 带数组下标的键名：bFWVersion[64]
-_RE_ARRAY = re.compile(r'^(.+?)\[(\d+)\]$')
-
-# Hex Dump 数据行：...DDD:  XX XX XX ...
-_RE_HEX_DUMP_LINE = re.compile(r'^\s*\.\.\.\d+:\s+[\dA-Fa-f\s]+$')
-
-# Hex Dump Offset 表头行
-_RE_HEX_OFFSET_HEADER = re.compile(r'^\s*Offset:')
-
-# 混合叙述行（非标准，不以已知格式开头）
-# "    A GMZone contains multiple blocks in the MB table, GMZone:0x0"
-_RE_NARRATIVE_LINE = re.compile(r'^    [A-Z][a-z]')
-
-# Ext_CSD 解析字段：Ext_CSD[N] Field Name: value
+# Ext_CSD 解码字段：Ext_CSD[N] Field Name: value
 # "Ext_CSD[0]   Reserved_0[0-6]:   0x0"
 # "Ext_CSD[253] PWR_CL_DDR_200_360:  (4 bit bus)..."
 _RE_EXT_CSD_KV = re.compile(r'^Ext_CSD\[(\d+(?:-\d+)?)\]\s+(.+?)\s*:\s*(.*)$')
@@ -143,11 +114,22 @@ _RE_EXT_CSD_KV = re.compile(r'^Ext_CSD\[(\d+(?:-\d+)?)\]\s+(.+?)\s*:\s*(.*)$')
 # "Platform info:VCC 3345 mv"
 _RE_PLATFORM_KV = re.compile(r'^(Platform\s+\w+)\s*:\s*(.*)$')
 
-# 内联 Section 结果：SectionName:Pass 或 SectionName:Fail
-# "Wear_Detection:Pass"
-# "BM_table_match:Pass"
-# "GM/BIT_comparison_garbage:Pass"
-_RE_INLINE_SECTION_RESULT = re.compile(r'^([\w/]+(?:_[\w]+)*):(Pass|Fail)\s*$')
+# Hex Dump 数据行：...DDD:  XX XX XX ...
+_RE_HEX_DUMP_LINE = re.compile(r'^\s*\.\.\.\d+:\s+[\dA-Fa-f\s]+$')
+
+# Hex Dump Offset 表头行
+_RE_HEX_OFFSET_HEADER = re.compile(r'^\s*Offset:')
+
+# 带前缀的键名：[SLC] WearGap
+_RE_PREFIX = re.compile(r'^\[([A-Z]+)\]\s*(.+)$')
+
+# 带数组下标的键名：bFWVersion[64]
+_RE_ARRAY = re.compile(r'^(.+?)\[(\d+)\]$')
+
+# rtms_str_var / rtms_get_var 配对行
+# "rtms_str_var:dwDegreOfwear"
+# "rtms_get_var:27"
+_RE_RTMS_VAR = re.compile(r'^(rtms_str_var|rtms_get_var):(.+)$')
 
 # 已知的测试 Section 名称白名单（用于内联结果识别，避免误匹配普通 KV）
 _KNOWN_TEST_SECTIONS: set[str] = {
@@ -212,224 +194,84 @@ def convert_value(raw_value: str) -> tuple[Optional[float], str]:
     return None, "string"
 
 
+def _extract_array_index(raw_key: str) -> tuple[str, Optional[str]]:
+    """从键名中提取数组下标。
+
+    Args:
+        raw_key: 原始键名（如 "bFWVersion[64]"）。
+
+    Returns:
+        (clean_key, array_index) 元组。
+    """
+    match = _RE_ARRAY.match(raw_key)
+    if match:
+        return match.group(1), match.group(2)
+    return raw_key, None
+
+
 # ============================================================
-# Section 分块
+# 逐行分类解析
 # ============================================================
 
-@dataclass
-class _SectionBlock:
-    """内部使用：一个 Section 的原始文本块。"""
+def _parse_lines(lines: list[str]) -> list[MetricEntry]:
+    """逐行分类解析日志，直接产出 MetricEntry 列表。
 
-    name: str
-    lines: list[str] = field(default_factory=list)
+    匹配优先级（从高到低）：
+    1. Hex Dump 块（eMMC_EXT_CSD/eMMC_CSD + Offset + 数据行）
+    2. Ext_CSD 解码字段（Ext_CSD[N] Field: value）
+    3. rtms_str_var / rtms_get_var 配对行
+    4. Platform 系列 KV（Platform Keys/Info/info）
+    5. 内联测试结果（SectionName:Pass/Fail）
+    6. 顶层紧凑 KV（Key:Value）
+    7. 自由文本行
 
-
-def _split_sections(lines: list[str]) -> list[_SectionBlock]:
-    """将日志文本按 Section 切分。
-
-    识别规则：
-    - 文件头（Section Header 出现前的顶层 KV）→ "header"
-    - "Start of test:" 等 → 对应 Section
-    - "Cycles:N" → "Cycles"
-    - "SectionName:Pass/Fail" 内联 Section 结果 → 对应 Section
-    - 空行作为 Section 间分隔（不归属任何 Section）
+    Section 归属规则：
+    - 默认为 "header"
+    - 遇到内联测试结果时切换为该 Section 名
+    - Ext_CSD 解码字段始终归入 "Ext_CSD"
+    - Hex Dump 块归入 "eMMC_EXT_CSD"
 
     Args:
         lines: 日志文件的所有行。
 
     Returns:
-        SectionBlock 列表。
-    """
-    blocks: list[_SectionBlock] = []
-    current: Optional[_SectionBlock] = None
-
-    for line in lines:
-        stripped = line.rstrip()
-
-        # 空行：不归属任何 Section，仅作为分隔
-        if not stripped:
-            continue
-
-        # 检查是否为 Section Header
-        header_match = _RE_SECTION_HEADER.match(stripped)
-        if header_match:
-            section_name = header_match.group(1).strip()
-            current = _SectionBlock(name=section_name)
-            blocks.append(current)
-            continue
-
-        # 检查是否为内联 Section 结果（如 "Wear_Detection:Pass"）
-        inline_result_match = _RE_INLINE_SECTION_RESULT.match(stripped)
-        if inline_result_match and not stripped.startswith(" ") and not stripped.startswith("\t"):
-            section_name = inline_result_match.group(1).strip()
-            # 仅当 section_name 在已知测试 Section 白名单中时才视为 Section
-            if section_name in _KNOWN_TEST_SECTIONS:
-                current = _SectionBlock(name=section_name)
-                blocks.append(current)
-                current.lines.append(stripped)
-                continue
-
-        # 检查是否为紧凑 KV（如 "Cycles:0"）
-        compact_match = _RE_COMPACT_KV.match(stripped)
-        if compact_match and not stripped.startswith(" ") and not stripped.startswith("\t"):
-            key = compact_match.group(1)
-            if key == "Cycles":
-                # Cycles 行归入 "Cycles" section
-                if current is None or current.name != "Cycles":
-                    current = _SectionBlock(name="Cycles")
-                    blocks.append(current)
-                current.lines.append(stripped)
-                continue
-
-        # 其余行归入当前 Section；如果尚无 Section，创建 "header"
-        if current is None:
-            current = _SectionBlock(name="header")
-            blocks.append(current)
-
-        current.lines.append(stripped)
-
-    return blocks
-
-
-# ============================================================
-# KV 提取
-# ============================================================
-
-def _parse_key(raw_key: str) -> tuple[str, Optional[str], Optional[str]]:
-    """解析键名，返回 (clean_key, prefix, array_index)。
-
-    示例:
-        "[SLC] WearGap"   → ("WearGap", "SLC", None)
-        "bFWVersion[64]"  → ("bFWVersion", None, "64")
-        "wPdmPostCnt"     → ("wPdmPostCnt", None, None)
-
-    Args:
-        raw_key: 原始键名。
-
-    Returns:
-        (clean_key, prefix, array_index) 三元组。
-    """
-    key = raw_key.strip()
-    prefix: Optional[str] = None
-    array_index: Optional[str] = None
-
-    # 提取前缀 [SLC] / [TLC]
-    prefix_match = _RE_PREFIX.match(key)
-    if prefix_match:
-        prefix = prefix_match.group(1)
-        key = prefix_match.group(2).strip()
-
-    # 提取数组下标 [64]
-    array_match = _RE_ARRAY.match(key)
-    if array_match:
-        key = array_match.group(1)
-        array_index = array_match.group(2)
-
-    return key, prefix, array_index
-
-
-def _extract_kv_from_block(block: _SectionBlock) -> list[MetricEntry]:
-    """从 SectionBlock 中提取所有 KV 指标。
-
-    处理的格式：
-    1. Tab-Result
-    2. 缩进 KV（4 空格或 Tab 缩进）
-    3. 顶层 KV（header section）
-    4. Ext_CSD 解析字段（Ext_CSD[N] Field: value）
-    5. Platform 系列 KV（Platform Keys/Info/Info）
-    6. 紧凑 KV（Cycles、数组下标）
-    7. Hex Dump 块（跳过）
-    8. 自由文本行
-
-    Args:
-        block: Section 文本块。
-
-    Returns:
         MetricEntry 列表。
     """
     entries: list[MetricEntry] = []
-    section = block.name
-    lines = block.lines
-    i = 0
+    current_section = "header"
     free_text_counter = 0
+    i = 0
 
     while i < len(lines):
-        line = lines[i]
+        line = lines[i].rstrip()
+
+        # 空行跳过
+        if not line:
+            i += 1
+            continue
 
         try:
-            # ---- 1. Tab-Result ----
-            tab_match = _RE_TAB_RESULT.match(line)
-            if tab_match:
-                raw_key = tab_match.group(1)
-                raw_val = tab_match.group(2).strip()
-                num_val, val_type = convert_value(raw_val)
+            # ---- 1. Hex Dump 块 ----
+            # 检测 eMMC_EXT_CSD: 或 eMMC_CSD: 后跟 Offset 表头 + 数据行
+            if (
+                (line.startswith("eMMC_EXT_CSD") or line.startswith("eMMC_CSD"))
+                and i + 1 < len(lines)
+                and _RE_HEX_OFFSET_HEADER.match(lines[i + 1].rstrip())
+            ):
+                dump_lines: list[str] = []
+                i += 2  # 跳过当前行和 Offset 表头行
+                while i < len(lines) and _RE_HEX_DUMP_LINE.match(lines[i].rstrip()):
+                    dump_lines.append(lines[i].strip())
+                    i += 1
+                hex_text = "\n".join(dump_lines)
+                key_raw = line.rstrip()
                 entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=raw_key,
-                    raw_value=raw_val, num_value=num_val, value_type=val_type,
+                    section="eMMC_EXT_CSD", key_raw=key_raw, key=key_raw,
+                    raw_value=hex_text, num_value=None, value_type="hexdump",
                 ))
-                i += 1
                 continue
 
-            # ---- 2. 缩进 KV（4 空格） ----
-            indent_match = _RE_INDENT_KV.match(line)
-            if indent_match:
-                # 正则已内联前缀捕获：group(1)=前缀, group(2)=键名, group(3)=值
-                inline_prefix = indent_match.group(1)  # 可能为 None
-                raw_key_part = indent_match.group(2).strip()
-                raw_val = indent_match.group(3).strip()
-                # 构造完整的 raw_key 供存储
-                raw_key = f"[{inline_prefix}] {raw_key_part}" if inline_prefix else raw_key_part
-
-                # 检查是否为 Hex Dump 起始（值为空，下一行是 Offset 表头）
-                if not raw_val and i + 1 < len(lines) and _RE_HEX_OFFSET_HEADER.match(lines[i + 1]):
-                    # 跳过 Hex Dump 块：收集所有 dump 行作为整体值
-                    dump_lines: list[str] = []
-                    i += 2  # 跳过当前行和 Offset 表头行
-                    while i < len(lines) and _RE_HEX_DUMP_LINE.match(lines[i]):
-                        dump_lines.append(lines[i].strip())
-                        i += 1
-                    # 将整个 Hex Dump 存储为一条记录
-                    hex_text = "\n".join(dump_lines)
-                    entries.append(MetricEntry(
-                        section=section, key_raw=raw_key, key=raw_key,
-                        raw_value=hex_text, num_value=None, value_type="hexdump",
-                    ))
-                    continue
-
-                # 正常缩进 KV
-                # 前缀已由正则内联捕获，只需处理数组下标
-                clean_key = raw_key_part
-                array_index: Optional[str] = None
-                array_match = _RE_ARRAY.match(clean_key)
-                if array_match:
-                    clean_key = array_match.group(1)
-                    array_index = array_match.group(2)
-                prefix = inline_prefix
-                num_val, val_type = convert_value(raw_val)
-                entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=clean_key,
-                    raw_value=raw_val, num_value=num_val, value_type=val_type,
-                    prefix=prefix, array_index=array_index,
-                ))
-                i += 1
-                continue
-
-            # ---- 3. 顶层 KV（header section） ----
-            top_match = _RE_TOP_KV.match(line)
-            if top_match:
-                raw_key = top_match.group(1)
-                raw_val = top_match.group(2).strip()
-                clean_key, prefix, array_index = _parse_key(raw_key)
-                num_val, val_type = convert_value(raw_val)
-                entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=clean_key,
-                    raw_value=raw_val, num_value=num_val, value_type=val_type,
-                    prefix=prefix, array_index=array_index,
-                ))
-                i += 1
-                continue
-
-            # ---- 4. Ext_CSD 解析字段 ----
+            # ---- 2. Ext_CSD 解码字段 ----
             ext_csd_match = _RE_EXT_CSD_KV.match(line)
             if ext_csd_match:
                 offset = ext_csd_match.group(1)
@@ -438,70 +280,83 @@ def _extract_kv_from_block(block: _SectionBlock) -> list[MetricEntry]:
                 raw_key = f"Ext_CSD[{offset}] {field_name}"
                 num_val, val_type = convert_value(raw_val)
                 entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=field_name,
+                    section="Ext_CSD", key_raw=raw_key, key=field_name,
                     raw_value=raw_val, num_value=num_val, value_type=val_type,
                     array_index=offset,
                 ))
                 i += 1
                 continue
 
-            # ---- 5. Platform 系列 KV ----
+            # ---- 3. rtms_str_var / rtms_get_var ----
+            rtms_var_match = _RE_RTMS_VAR.match(line)
+            if rtms_var_match:
+                var_type = rtms_var_match.group(1)
+                raw_val = rtms_var_match.group(2).strip()
+                entries.append(MetricEntry(
+                    section=current_section, key_raw=line.strip(), key=var_type,
+                    raw_value=raw_val, num_value=None, value_type="string",
+                ))
+                i += 1
+                continue
+
+            # ---- 4. Platform 系列 KV ----
             plat_match = _RE_PLATFORM_KV.match(line)
             if plat_match:
                 plat_key = plat_match.group(1).strip()
                 raw_val = plat_match.group(2).strip()
                 entries.append(MetricEntry(
-                    section=section, key_raw=line.strip(), key=plat_key,
+                    section=current_section, key_raw=line.strip(), key=plat_key,
                     raw_value=raw_val, num_value=None, value_type="string",
                 ))
                 i += 1
                 continue
 
-            # ---- 6. 紧凑 KV（Cycles、数组下标） ----
+            # ---- 5. 内联测试结果（切换 Section） ----
+            inline_match = _RE_INLINE_SECTION_RESULT.match(line)
+            if inline_match:
+                section_name = inline_match.group(1).strip()
+                if section_name in _KNOWN_TEST_SECTIONS:
+                    current_section = section_name
+                    raw_val = line.strip()
+                    entries.append(MetricEntry(
+                        section=current_section, key_raw=raw_val, key=raw_val,
+                        raw_value=raw_val, num_value=None, value_type="string",
+                    ))
+                    i += 1
+                    continue
+
+            # ---- 6. 顶层紧凑 KV（主力匹配） ----
             compact_match = _RE_COMPACT_KV.match(line)
-            if compact_match and not line.startswith(" ") and not line.startswith("\t"):
+            if compact_match:
                 raw_key = compact_match.group(1)
                 raw_val = compact_match.group(2).strip()
-                # 提取数组下标（如 bFWVersion[64]、dwBlockPECycle[0000]）
-                clean_key = raw_key
-                compact_array_index: Optional[str] = None
-                arr_match = _RE_ARRAY.match(raw_key)
-                if arr_match:
-                    clean_key = arr_match.group(1)
-                    compact_array_index = arr_match.group(2)
+                clean_key, array_index = _extract_array_index(raw_key)
                 num_val, val_type = convert_value(raw_val)
                 entries.append(MetricEntry(
-                    section=section, key_raw=raw_key, key=clean_key,
+                    section=current_section, key_raw=raw_key, key=clean_key,
                     raw_value=raw_val, num_value=num_val, value_type=val_type,
-                    array_index=compact_array_index,
+                    array_index=array_index,
                 ))
                 i += 1
                 continue
 
-            # ---- 7. Hex Dump 数据行（独立出现时跳过） ----
+            # ---- 7. 独立 Hex Dump 行（跳过） ----
             if _RE_HEX_DUMP_LINE.match(line) or _RE_HEX_OFFSET_HEADER.match(line):
                 i += 1
                 continue
 
-            # ---- 8. 混合叙述行 / 自由文本（非标准行） ----
-            # 缩进但不匹配冒号分隔的行，整行存储
-            if line.startswith("    ") or line.startswith("\t"):
-                free_text_counter += 1
-                free_key = f"free_text_{free_text_counter}"
-                raw_val = line.strip()
-                entries.append(MetricEntry(
-                    section=section, key_raw=raw_val, key=free_key,
-                    raw_value=raw_val, num_value=None, value_type="string",
-                ))
-                i += 1
-                continue
-
-            # ---- 7. 无法识别的行：记录日志后跳过 ----
-            logger.debug("跳过无法识别的行 [%s L%d]: %s", section, i + 1, line)
+            # ---- 8. 自由文本行（整行存储） ----
+            free_text_counter += 1
+            free_key = f"free_text_{free_text_counter}"
+            raw_val = line.strip()
+            entries.append(MetricEntry(
+                section=current_section, key_raw=raw_val, key=free_key,
+                raw_value=raw_val, num_value=None, value_type="string",
+            ))
             i += 1
 
         except Exception as exc:
-            logger.warning("解析行失败 [%s L%d]: %s - %s", section, i + 1, line, exc)
+            logger.warning("解析行失败 [L%d]: %s - %s", i + 1, line, exc)
             i += 1
 
     return entries
@@ -514,7 +369,7 @@ def _extract_kv_from_block(block: _SectionBlock) -> list[MetricEntry]:
 class LogParser:
     """RTMS 测试日志解析器门面。
 
-    编排 Section 分块、KV 提取、数值转换，完成单个文件的完整解析。
+    采用扁平化逐行分类解析，完成单个文件的完整解析。
     """
 
     def parse_file(self, file_path: str) -> ParseResult:
@@ -547,21 +402,10 @@ class LogParser:
             return result
 
         try:
-            # 1. Section 分块
-            blocks = _split_sections(lines)
+            # 逐行分类解析
+            result.metrics = _parse_lines(lines)
 
-            # 2. 逐 Section 提取 KV
-            all_metrics: list[MetricEntry] = []
-            for block in blocks:
-                try:
-                    metrics = _extract_kv_from_block(block)
-                    all_metrics.extend(metrics)
-                except Exception as exc:
-                    logger.warning("Section '%s' 解析失败: %s", block.name, exc)
-
-            result.metrics = all_metrics
-
-            # 3. 从指标中提取主表冗余字段
+            # 从指标中提取主表冗余字段
             self._extract_summary_fields(result)
 
         except Exception as exc:
@@ -575,21 +419,17 @@ class LogParser:
         """从 metrics 列表中提取主表冗余字段。
 
         扫描所有指标，根据 section 和 key 提取高频使用的字段值到主表。
-        支持两种日志格式：
-        - 结构化格式（有 Start of test / End of test 等 Section）
-        - 扁平格式（所有字段在 header section，磨损数据在 eMMC_EXT_CSD）
 
         Args:
             result: 待填充的 ParseResult。
         """
-        # 磨损指标的候选 section 列表（兼容扁平格式）
-        _wear_sections = {"Wear_Detection", "eMMC_EXT_CSD"}
-        # 测试元数据的候选 section 列表
-        _meta_sections = {"header", "Start of test"}
+        # 磨损指标的候选 section（新格式中磨损数据在 header，
+        # Wear_Detection 内联结果行之后可能有少量补充数据）
+        _wear_sections = {"header", "Wear_Detection"}
 
         for m in result.metrics:
-            # ---- 设备基本信息（header / Start of test） ----
-            if m.section in _meta_sections:
+            # ---- 设备基本信息（header section） ----
+            if m.section == "header":
                 if m.key == "Device_Name":
                     result.device_name = m.raw_value
                 elif m.key == "Device_Tool_Name":
@@ -606,7 +446,6 @@ class LogParser:
                     result.original_bad_block = (
                         int(m.num_value) if m.num_value is not None else None
                     )
-                # 新增字段
                 elif m.key == "Controller" and result.controller is None:
                     result.controller = m.raw_value
                 elif m.key == "Capacity" and result.capacity_mb is None:
@@ -633,7 +472,7 @@ class LogParser:
                 elif m.key == "RTMS_Code" and result.rtms_code is None:
                     result.rtms_code = m.raw_value
 
-        # RTMS_Result / RTMS_Code 可能在任意 section，全局查找备用
+        # RTMS_Result / RTMS_Code 全局备用查找
         if result.rtms_result is None or result.rtms_code is None:
             for m in result.metrics:
                 if m.key == "RTMS_Result" and result.rtms_result is None:
@@ -653,16 +492,7 @@ class LogParser:
                         except (ValueError, TypeError):
                             pass
 
-        # Cycles
-        cycle_values = [
-            int(m.num_value)
-            for m in result.metrics
-            if m.section == "Cycles" and m.key == "Cycles" and m.num_value is not None
-        ]
-        if cycle_values:
-            result.cycles = max(cycle_values)
-
-        # Wear_Detection 关键指标（兼容 eMMC_EXT_CSD section）
+        # Wear_Detection 关键指标
         for m in result.metrics:
             if m.section in _wear_sections:
                 if m.key == "WAI" and result.wai is None:
@@ -678,28 +508,11 @@ class LogParser:
                 elif m.key == "dwIncreaseBadBlock" and m.prefix is None and result.increase_bad_block is None:
                     result.increase_bad_block = int(m.num_value) if m.num_value is not None else None
 
-        # End of test 中的 dwIncreaseBadBlock（如果仍未取到）
-        if result.increase_bad_block is None:
-            for m in result.metrics:
-                if m.section == "End of test" and m.key == "dwIncreaseBadBlock":
-                    result.increase_bad_block = int(m.num_value) if m.num_value is not None else None
-                    break
-
-        # 汇总 Result：
-        # 1. 从 Tab-Result 指标中汇总
+        # 汇总测试结果：
+        # 1. 从内联 Section 结果中汇总（如 Wear_Detection:Pass）
         fail_sections: list[str] = []
         has_pass = False
         has_fail = False
-        for m in result.metrics:
-            if m.key == "Result":
-                val = m.raw_value.strip()
-                if "Fail" in val:
-                    has_fail = True
-                    fail_sections.append(m.section)
-                elif "Pass" in val:
-                    has_pass = True
-
-        # 2. 从内联 Section 结果中汇总（如 Wear_Detection:Pass）
         for m in result.metrics:
             if m.section in _KNOWN_TEST_SECTIONS and m.key_raw == m.raw_value:
                 inline_match = _RE_INLINE_SECTION_RESULT.match(m.raw_value)
@@ -713,7 +526,7 @@ class LogParser:
                     elif section_result == "Pass":
                         has_pass = True
 
-        # 3. RTMS_Result 作为最终结果的最高优先级判断
+        # 2. RTMS_Result 作为最终结果的最高优先级判断
         if result.rtms_result:
             rtms_upper = result.rtms_result.strip().upper()
             if "FAIL" in rtms_upper:
