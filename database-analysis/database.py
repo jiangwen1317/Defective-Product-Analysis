@@ -243,8 +243,8 @@ class MetricsRepository:
             sql += " AND parsed_at >= ?"
             params.append(date_from)
         if date_to:
-            sql += " AND parsed_at <= ?"
-            params.append(date_to + " 23:59:59")
+            sql += " AND parsed_at < date(?, '+1 day')"
+            params.append(date_to)
 
         sql += " ORDER BY parsed_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])

@@ -328,10 +328,61 @@ class QueryEngine:
             rows = conn.execute(sql, params).fetchall()
             return [dict(row) for row in rows]
 
+    def _get_trend_data_batch(
+        self,
+        metric_keys: list[str],
+        *,
+        section: Optional[str] = None,
+        device_name: Optional[str] = None,
+        fw_version: Optional[str] = None,
+    ) -> list[dict]:
+        """批量获取多个指标的趋势数据（单次连接、单条 SQL）。
+
+        与 get_trend_data 功能相同，但使用 IN 查询合并多个指标，
+        避免为每个指标单独创建连接。
+
+        Args:
+            metric_keys: 指标名列表。
+            section: Section 名（可选）。
+            device_name: 设备名（可选）。
+            fw_version: 固件版本（可选）。
+
+        Returns:
+            趋势数据列表，每项包含 parsed_at, device_name, num_value 等。
+        """
+        if not metric_keys:
+            return []
+
+        with self._db.connect() as conn:
+            placeholders = ",".join("?" * len(metric_keys))
+            sql = f"""
+                SELECT s.device_name, s.fw_version, s.parsed_at, s.overall_result,
+                       m.section, m.metric_key, m.metric_key_raw,
+                       m.raw_value, m.num_value, m.prefix
+                FROM test_metrics m
+                JOIN test_summary s ON m.summary_id = s.id
+                WHERE m.metric_key IN ({placeholders})
+            """
+            params: list = list(metric_keys)
+
+            if section:
+                sql += " AND m.section = ?"
+                params.append(section)
+            if device_name:
+                sql += " AND s.device_name = ?"
+                params.append(device_name)
+            if fw_version:
+                sql += " AND s.fw_version = ?"
+                params.append(fw_version)
+
+            sql += " ORDER BY m.metric_key, s.parsed_at ASC"
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+
     def get_wear_trend(self, device_name: Optional[str] = None) -> list[dict]:
         """获取磨损相关指标趋势（WAI、PE Cycle、Bad Block）。
 
-        一次查询返回多个磨损指标的合并数据。
+        使用单次查询批量获取多个磨损指标，避免多次连接开销。
 
         Args:
             device_name: 设备名（可选）。
@@ -343,18 +394,16 @@ class QueryEngine:
                      "wTLCMinPECycle", "wTLCMaxPECycle",
                      "dwIncreaseBadBlock", "wNewBadBlkNum"]
 
-        results: list[dict] = []
-        for key in wear_keys:
-            data = self.get_trend_data(
-                key,
-                section="Wear_Detection",
-                device_name=device_name,
-            )
-            results.extend(data)
-        return results
+        return self._get_trend_data_batch(
+            wear_keys,
+            section="Wear_Detection",
+            device_name=device_name,
+        )
 
     def get_ecc_trend(self, device_name: Optional[str] = None) -> list[dict]:
         """获取 ECC 相关指标趋势。
+
+        使用单次查询批量获取多个 ECC 指标，避免多次连接开销。
 
         Args:
             device_name: 设备名（可选）。
@@ -365,11 +414,10 @@ class QueryEngine:
         ecc_keys = ["dwUncorrectableCount", "wLogEdECCFailCnt",
                     "wCRCErrorCnt", "dwCRCErrCnt"]
 
-        results: list[dict] = []
-        for key in ecc_keys:
-            data = self.get_trend_data(key, device_name=device_name)
-            results.extend(data)
-        return results
+        return self._get_trend_data_batch(
+            ecc_keys,
+            device_name=device_name,
+        )
 
     # ---- 异常检测 ----
 
@@ -404,10 +452,16 @@ class QueryEngine:
         if threshold is not None:
             return [d for d in numeric_data if d["num_value"] > threshold]
 
-        # 基于统计的异常检测
+        # 基于统计的异常检测（使用样本方差，n-1）
         values = [d["num_value"] for d in numeric_data]
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
+        n = len(values)
+
+        # 样本数 < 2 时无法计算样本标准差，退化为全量返回空
+        if n < 2:
+            return []
+
+        mean = sum(values) / n
+        variance = sum((v - mean) ** 2 for v in values) / (n - 1)
         std = variance ** 0.5
         anomaly_threshold = mean + std_factor * std
 
