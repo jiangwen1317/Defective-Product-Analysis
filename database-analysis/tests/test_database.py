@@ -323,7 +323,7 @@ class TestRepositoryQuery:
 # ================================================================
 
 class TestIncrementalAndDelete:
-    """测试增量判断和按文件名删除。"""
+    """测试增量判断和按文件名/ID 删除。"""
 
     def test_is_file_processed_true(self, tmp_db):
         db, repo = tmp_db
@@ -395,6 +395,66 @@ class TestIncrementalAndDelete:
         with db.connect() as conn:
             deleted = repo.delete_summary_by_filename(conn, "no_such_file.txt")
             assert deleted is False
+
+    def test_delete_summary_by_id(self, tmp_db):
+        db, repo = tmp_db
+        with db.connect() as conn:
+            sid = repo.insert_summary(
+                conn,
+                file_name="test.txt",
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+            )
+            repo.insert_metrics_batch(conn, sid, [
+                ("header", "WAI", "WAI", "100.0", 100.0, "float", None, None),
+            ])
+
+        with db.connect() as conn:
+            assert repo.delete_summary_by_id(conn, sid) is True
+
+        # 验证主表和关联指标均已删除
+        with db.connect() as conn:
+            assert len(repo.get_summaries(conn)) == 0
+            assert len(repo.get_metrics(conn, summary_id=sid)) == 0
+
+    def test_delete_summary_by_id_nonexistent(self, tmp_db):
+        db, repo = tmp_db
+        with db.connect() as conn:
+            assert repo.delete_summary_by_id(conn, 9999) is False
+
+    def test_delete_summaries_by_ids(self, tmp_db):
+        db, repo = tmp_db
+        ids = []
+        with db.connect() as conn:
+            for i in range(3):
+                sid = repo.insert_summary(
+                    conn,
+                    file_name=f"file_{i}.txt",
+                    file_path=f"/tmp/file_{i}.txt",
+                    file_size=100 + i,
+                    file_mtime=1000.0 + i,
+                )
+                repo.insert_metrics_batch(conn, sid, [
+                    ("header", "WAI", "WAI", str(i), float(i), "float", None, None),
+                ])
+                ids.append(sid)
+
+        # 删除前两条
+        with db.connect() as conn:
+            deleted = repo.delete_summaries_by_ids(conn, ids[:2])
+            assert deleted == 2
+
+        # 验证只剩第三条
+        with db.connect() as conn:
+            remaining = repo.get_summaries(conn)
+            assert len(remaining) == 1
+            assert remaining[0]["file_name"] == "file_2.txt"
+
+    def test_delete_summaries_by_ids_empty(self, tmp_db):
+        db, repo = tmp_db
+        with db.connect() as conn:
+            assert repo.delete_summaries_by_ids(conn, []) == 0
 
 
 # ================================================================

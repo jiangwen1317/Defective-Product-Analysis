@@ -351,7 +351,7 @@ class App(ctk.CTk):
             row=0, column=5, pady=3
         )
 
-        # 行 1
+        # 行 2
         self._q_section = ctk.StringVar()
         self._q_key = ctk.StringVar()
 
@@ -361,7 +361,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(grid, text="指标名:").grid(row=1, column=2, padx=(0, 5), pady=3, sticky="e")
         ctk.CTkEntry(grid, textvariable=self._q_key, width=180).grid(row=1, column=3, padx=(0, 15), pady=3)
 
-        # 行 2
+        # 行 3
         self._q_flash_id = ctk.StringVar()
         self._q_capacity = ctk.StringVar()
         self._q_controller = ctk.StringVar()
@@ -383,15 +383,25 @@ class App(ctk.CTk):
         result_frame = ctk.CTkFrame(parent)
         result_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
 
-        self._query_count_label = ctk.CTkLabel(result_frame, text="查询结果", font=ctk.CTkFont(size=14, weight="bold"))
-        self._query_count_label.pack(anchor="w", padx=15, pady=(10, 5))
+        # 标题行 + 删除按钮
+        header_bar = ctk.CTkFrame(result_frame, fg_color="transparent")
+        header_bar.pack(fill="x", padx=15, pady=(10, 5))
+
+        self._query_count_label = ctk.CTkLabel(header_bar, text="查询结果", font=ctk.CTkFont(size=14, weight="bold"))
+        self._query_count_label.pack(side="left")
+
+        ctk.CTkButton(
+            header_bar, text="🗑️ 删除整条记录", width=140,
+            fg_color="darkred", hover_color="red",
+            command=self._delete_selected,
+        ).pack(side="right")
 
         # Treeview
         tree_frame = ctk.CTkFrame(result_frame, fg_color="transparent")
         tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
         columns = ("id", "device", "fw_version", "flash_id", "capacity", "section", "key", "value", "num_value", "result")
-        self._query_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20)
+        self._query_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20, selectmode="extended")
 
         headers = {
             "id": ("ID", 50), "device": ("设备名", 130), "fw_version": ("固件版本", 180),
@@ -482,6 +492,58 @@ class App(ctk.CTk):
                     row_count += 1
 
         self._query_count_label.configure(text=f"查询结果: {row_count} 条指标（来自 {len(summaries)} 条记录）")
+
+    def _delete_selected(self) -> None:
+        """删除查询结果中选中的整条记录。
+
+        选中任意指标行即可定位其所属的 summary 记录，
+        删除该记录及其全部关联指标（ON DELETE CASCADE）。
+        """
+        selected_items = self._query_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("提示", "请先在查询结果中选择要删除的行\n（选中任意一行即可定位所属记录）")
+            return
+
+        # 从选中行提取唯一的 summary ID
+        summary_ids: set[int] = set()
+        for item in selected_items:
+            values = self._query_tree.item(item, "values")
+            if values:
+                try:
+                    summary_ids.add(int(values[0]))
+                except (ValueError, IndexError):
+                    pass
+
+        if not summary_ids:
+            messagebox.showwarning("提示", "未找到有效的记录 ID")
+            return
+
+        id_list = sorted(summary_ids)
+        id_display = ", ".join(str(i) for i in id_list[:10])
+        if len(id_list) > 10:
+            id_display += "..."
+
+        if not messagebox.askyesno(
+            "确认删除整条记录",
+            f"即将删除 {len(id_list)} 条设备记录及其全部指标数据\n\n"
+            f"记录 ID: {id_display}\n"
+            f"选中了 {len(selected_items)} 行指标，涉及 {len(id_list)} 条记录\n\n"
+            f"⚠️ 每条记录包含数百条指标，删除后不可恢复！\n"
+            f"确认要继续吗？",
+        ):
+            return
+
+        repo = MetricsRepository(self._db)
+        with self._db.connect() as conn:
+            deleted = repo.delete_summaries_by_ids(conn, id_list)
+
+        messagebox.showinfo("完成", f"已删除 {deleted} 条记录及其全部关联指标")
+
+        # 从表格中移除已删除的行
+        for item in selected_items:
+            self._query_tree.delete(item)
+
+        self._update_status()
 
     # ================================================================
     # Tab: 通用图表绘制
@@ -911,7 +973,11 @@ def main() -> None:
     """启动 GUI 应用。"""
     app = App()
     app._update_status()
-    app.mainloop()
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        # Ctrl+C 时优雅退出，避免 Tkinter 回调中的 traceback
+        app.destroy()
 
 
 if __name__ == "__main__":

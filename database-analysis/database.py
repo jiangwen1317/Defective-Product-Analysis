@@ -427,6 +427,8 @@ class MetricsRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    # ---- 删除 ----
+
     def delete_summary_by_filename(
         self,
         conn: sqlite3.Connection,
@@ -448,3 +450,46 @@ class MetricsRepository:
             (file_name,),
         )
         return cursor.rowcount > 0
+
+    def delete_summary_by_id(
+        self,
+        conn: sqlite3.Connection,
+        summary_id: int,
+    ) -> bool:
+        """按 ID 删除单条主表记录（级联删除关联指标）。
+
+        Args:
+            conn: 当前事务连接。
+            summary_id: 主表记录 ID。
+
+        Returns:
+            True 表示删除了记录，False 表示无匹配记录。
+        """
+        cursor = conn.execute(
+            "DELETE FROM test_summary WHERE id = ?",
+            (summary_id,),
+        )
+        return cursor.rowcount > 0
+
+    def delete_summaries_by_ids(
+        self,
+        conn: sqlite3.Connection,
+        summary_ids: list[int],
+    ) -> int:
+        """批量按 ID 删除多条主表记录（级联删除关联指标）。
+
+        Args:
+            conn: 当前事务连接。
+            summary_ids: 主表记录 ID 列表。
+
+        Returns:
+            实际删除的记录数。
+        """
+        if not summary_ids:
+            return 0
+        placeholders = ",".join("?" * len(summary_ids))
+        cursor = conn.execute(
+            f"DELETE FROM test_summary WHERE id IN ({placeholders})",
+            summary_ids,
+        )
+        return cursor.rowcount
