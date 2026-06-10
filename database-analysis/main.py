@@ -184,8 +184,10 @@ def cmd_parse(args: argparse.Namespace) -> None:
                     logger.error("解析失败: %s - %s", file_name, result.error)
                     continue
 
+                # 清除同名旧记录（文件内容变化时的重解析场景）
+                repo.delete_summary_by_filename(conn, result.file_name)
+
                 # 插入主表
-                import json as _json
                 summary_id = repo.insert_summary(
                     conn,
                     file_name=result.file_name,
@@ -201,7 +203,7 @@ def cmd_parse(args: argparse.Namespace) -> None:
                     original_bad_block=result.original_bad_block,
                     cycles=result.cycles,
                     overall_result=result.overall_result,
-                    fail_sections=_json.dumps(result.fail_sections, ensure_ascii=False),
+                    fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
                     controller=result.controller,
                     capacity_mb=result.capacity_mb,
                     capacity_sectors=result.capacity_sectors,

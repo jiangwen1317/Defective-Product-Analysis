@@ -223,7 +223,9 @@ class FileWatcher:
                         logger.error("解析失败: %s - %s", file_name, result.error)
                         continue
 
-                    import json as _json
+                    # 清除同名旧记录（文件内容变化时的重解析场景）
+                    self._repo.delete_summary_by_filename(conn, result.file_name)
+
                     summary_id = self._repo.insert_summary(
                         conn,
                         file_name=result.file_name,
@@ -239,7 +241,7 @@ class FileWatcher:
                         original_bad_block=result.original_bad_block,
                         cycles=result.cycles,
                         overall_result=result.overall_result,
-                        fail_sections=_json.dumps(result.fail_sections, ensure_ascii=False),
+                        fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
                         wai=result.wai,
                         slc_pe_min=result.slc_pe_min,
                         slc_pe_max=result.slc_pe_max,

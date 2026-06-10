@@ -175,9 +175,17 @@ class App(ctk.CTk):
             self._parse_dir_var.set(path)
 
     def _log_parse(self, msg: str) -> None:
-        """向日志区追加消息（线程安全）。"""
+        """向日志区追加消息（线程安全）。
+
+        通过 self.after 将 UI 操作调度回主线程，
+        避免后台线程直接访问 Tkinter 控件。
+        """
         ts = datetime.now().strftime("%H:%M:%S")
-        self._parse_log.insert("end", f"[{ts}] {msg}\n")
+        self.after(0, self._append_parse_log, f"[{ts}] {msg}")
+
+    def _append_parse_log(self, text: str) -> None:
+        """在主线程中向日志区追加文本（仅由 _log_parse 调用）。"""
+        self._parse_log.insert("end", text + "\n")
         self._parse_log.see("end")
 
     def _parse_single(self) -> None:
@@ -239,6 +247,9 @@ class App(ctk.CTk):
                         failed += 1
                         continue
 
+                    # 清除同名旧记录（文件内容变化时的重解析场景）
+                    repo.delete_summary_by_filename(conn, result.file_name)
+
                     summary_id = repo.insert_summary(
                         conn,
                         file_name=result.file_name, file_path=result.file_path,
@@ -291,12 +302,18 @@ class App(ctk.CTk):
         self._update_status()
 
     def _update_status(self) -> None:
-        """更新状态栏中的记录数。"""
+        """更新状态栏中的记录数（线程安全）。
+
+        通过 self.after 将 UI 操作调度回主线程。
+        """
         try:
             with self._db.connect() as conn:
                 count = conn.execute("SELECT COUNT(*) FROM test_summary").fetchone()[0]
-            self._status_label.configure(
-                text=f"  数据库: {os.path.basename(self._db_path)}  |  已导入: {count} 条记录"
+            self.after(
+                0,
+                lambda: self._status_label.configure(
+                    text=f"  数据库: {os.path.basename(self._db_path)}  |  已导入: {count} 条记录"
+                ),
             )
         except Exception:
             pass

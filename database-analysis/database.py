@@ -426,3 +426,25 @@ class MetricsRepository:
             "SELECT * FROM process_log ORDER BY processed_at DESC"
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def delete_summary_by_filename(
+        self,
+        conn: sqlite3.Connection,
+        file_name: str,
+    ) -> bool:
+        """按文件名删除主表记录（级联删除关联指标）。
+
+        用于文件内容变化后的重解析场景：先删除旧记录，再插入新记录。
+
+        Args:
+            conn: 当前事务连接。
+            file_name: 文件名。
+
+        Returns:
+            True 表示删除了记录，False 表示无匹配记录。
+        """
+        cursor = conn.execute(
+            "DELETE FROM test_summary WHERE file_name = ?",
+            (file_name,),
+        )
+        return cursor.rowcount > 0
