@@ -42,59 +42,64 @@ class LoginStatus:
 
 
 class Selectors:
-    """UI 选择器常量"""
+    """UI 选择器常量（基于 iView UI 框架）"""
     # 任务表格行选择器（按优先级排序）
     TABLE_ROWS = [
-        ".el-table__body-wrapper tbody tr",
         "table tbody tr",
+        ".ivu-table-body tbody tr",
     ]
 
-    # 下载按钮选择器
-    DOWNLOAD_BUTTON = [
-        'button:has-text("下载日志")',
-        'button:has-text("下载")',
-        ".el-button--text:has-text('下载')",
-        "td:last-child button:last-child",
+    # 登录相关选择器（基于实际 DOM 属性）
+    # 实际 DOM: <input type="text" placeholder="请输入邮箱账号，不需要输入后缀" class="ivu-input ...">
+    USERNAME_INPUT = [
+        'input[placeholder*="邮箱"]',
+        'input[type="text"]',
     ]
-
-    # 登录相关选择器
-    USERNAME_INPUT = ['input[type="text"]', 'input:not([type="password"])']
-    PASSWORD_INPUT = 'input[type="password"]'
+    # 实际 DOM: <input type="password" placeholder="请输入密码" class="ivu-input ...">
+    PASSWORD_INPUT = [
+        'input[placeholder*="密码"]',
+        'input[type="password"]',
+    ]
+    # 实际 DOM: <button type="button" class="ivu-btn ivu-btn-default ivu-btn-long"><span>登录</span></button>
     LOGIN_BUTTON = [
+        'button.ivu-btn:has-text("登录")',
         'button:has-text("登录")',
         'button:has-text("登 录")',
-        'button[type="submit"]',
-        '.el-button--primary:has-text("登录")',
-        '[class*="login"] button',
     ]
 
-    # 登录成功后的特征元素
+    # 登录成功后的特征元素（iView UI 框架）
     LOGIN_SUCCESS = [
-        ".el-table__body-wrapper tbody tr",
         "table tbody tr",
-        ".el-table__empty-text",
+        ".ivu-table-body tbody tr",
+        ".ivu-table-empty",
         ".user-info",
         "[class*='user-name']",
         "[class*='username']",
-        ".el-aside",
     ]
 
     # 任务列表页面特征
     TASK_LIST_PAGE = [
         "table tbody tr",
+        ".ivu-table",
         ".task-item",
         "[class*='task-row']",
-        ".el-table",
         "table",
     ]
 
-    # 下载菜单项
+    # 下载菜单项（基于实际 DOM: <li class="ivu-dropdown-item"> 下载日志 </li>）
     DOWNLOAD_MENU = 'li.ivu-dropdown-item:has-text("下载日志")'
+
+    # 复选框选择器（iView UI 自定义复选框 + 原生复选框兜底）
+    CHECKBOX = [
+        "input[type='checkbox']",
+        ".ivu-checkbox",
+    ]
 
     # 确认对话框按钮
     CONFIRM_BUTTON = [
         '.ivu-modal-footer button:has-text("确定")',
         '.ivu-btn-primary:has-text("确定")',
+        'button:has-text("确定")',
     ]
 
 
@@ -103,7 +108,7 @@ class Timeout:
     FORM_WAIT = 10_000      # 等待表单加载
     LOGIN_WAIT = 15_000     # 等待登录成功
     NETWORK_IDLE = 10_000   # 等待网络空闲
-    MENU_RENDER = 3_000     # 等待菜单渲染
+    MENU_RENDER = 5_000     # 等待菜单渲染
     DOWNLOAD_WAIT = 60_000  # 等待下载完成
     UI_RENDER = 500         # UI 渲染等待
     CHECKBOX_UPDATE = 300   # 复选框更新等待
@@ -301,26 +306,36 @@ class LogDownloader:
                 return False
 
             logging.info(f"正在登录 LVTS 服务器: {url}")
-            self.page.goto(url, wait_until="networkidle")
+            self.page.goto(url, wait_until="domcontentloaded")
 
-            # 等待登录表单加载
-            self.page.wait_for_selector("input", timeout=Timeout.FORM_WAIT)
+            # 等待登录表单加载（使用 placeholder 精确定位）
+            self.page.wait_for_selector(
+                'input[placeholder*="邮箱"]', timeout=Timeout.FORM_WAIT
+            )
 
-            # 填写用户名
-            username_locator = self.page.locator(", ".join(Selectors.USERNAME_INPUT))
-            if username_locator.count() > 0:
-                username_locator.first.fill(username)
-                logging.info("已输入用户名")
-            else:
+            # 填写用户名（按优先级遍历选择器）
+            username_filled = False
+            for selector in Selectors.USERNAME_INPUT:
+                locator = self.page.locator(selector)
+                if locator.count() > 0:
+                    locator.first.fill(username)
+                    username_filled = True
+                    logging.info(f"已输入用户名 (选择器: {selector})")
+                    break
+            if not username_filled:
                 logging.error("未找到用户名输入框")
                 return False
 
-            # 填写密码
-            password_locator = self.page.locator(Selectors.PASSWORD_INPUT)
-            if password_locator.count() > 0:
-                password_locator.first.fill(password)
-                logging.info("已输入密码")
-            else:
+            # 填写密码（按优先级遍历选择器）
+            password_filled = False
+            for selector in Selectors.PASSWORD_INPUT:
+                locator = self.page.locator(selector)
+                if locator.count() > 0:
+                    locator.first.fill(password)
+                    password_filled = True
+                    logging.info(f"已输入密码 (选择器: {selector})")
+                    break
+            if not password_filled:
                 logging.error("未找到密码输入框")
                 return False
 
@@ -356,21 +371,26 @@ class LogDownloader:
             self._save_screenshot("login_error")
             return False
 
-    def _wait_for_login_success(self, timeout: int = 15000) -> str:
+    def _wait_for_login_success(self, timeout: int = None) -> str:
         """
         等待并验证登录成功。
 
         验证策略：
         1. 登录按钮消失（必要条件）
         2. 出现任务列表或其他成功特征（充分条件）
+        3. URL 发生变化（辅助判断，仅当原始 URL 包含登录标识时有效）
 
         Args:
-            timeout: 单次等待超时（毫秒），总超时限制为 timeout * 1.5
+            timeout: 单次等待超时（毫秒），默认使用 Timeout.LOGIN_WAIT
 
         Returns:
             LoginStatus: 登录状态
         """
+        if timeout is None:
+            timeout = Timeout.LOGIN_WAIT
+
         start_time = time.time()
+        original_url = self.page.url
         max_total_timeout = int(timeout * 1.5)  # 总超时限制为 timeout 的 1.5 倍
 
         # 步骤 1: 等待登录按钮消失
@@ -422,12 +442,17 @@ class LogDownloader:
                 # 等待失败，继续检查下一个选择器
                 continue
 
-        # 步骤 3: 检查 URL 是否离开登录页
+        # 步骤 3: 检查 URL 是否发生变化（仅当原始 URL 包含登录标识时有效）
         current_url = self.page.url
         logging.debug(f"当前 URL: {current_url}")
+
+        url_changed = current_url != original_url
         login_page_indicators = ["/login", "/signin", "/enter"]
-        if not any(ind in current_url.lower() for ind in login_page_indicators):
-            logging.info("URL 已离开登录页，登录可能成功")
+
+        if url_changed and not any(
+            ind in current_url.lower() for ind in login_page_indicators
+        ):
+            logging.info(f"URL 已变化: {original_url} → {current_url}，登录可能成功")
             return LoginStatus.SUCCESS
 
         # 步骤 4: 快速检测（不再等待，只检查元素是否已存在且可见）
@@ -454,7 +479,7 @@ class LogDownloader:
         """
         try:
             logging.info("验证任务列表页面")
-            self.page.wait_for_load_state("networkidle", timeout=Timeout.NETWORK_IDLE)
+            self.page.wait_for_load_state("domcontentloaded", timeout=Timeout.NETWORK_IDLE)
             self.page.wait_for_timeout(Timeout.UI_RENDER)
 
             if self._is_task_list_page():
@@ -481,13 +506,16 @@ class LogDownloader:
         """
         扫描任务列表,识别所有可下载的任务。
 
+        注意: "下载日志"选项仅存在于右键上下文菜单中，表格行内无直接的下载按钮。
+        因此扫描阶段收集所有有效的任务行，下载能力在下载阶段通过右键菜单验证。
+
         Returns:
             可下载任务列表,每个任务包含 id、name 等信息
         """
         tasks = []
 
         try:
-            logging.info("正在扫描可下载的任务")
+            logging.info("正在扫描任务列表")
 
             # 查找所有任务行
             task_rows = []
@@ -500,31 +528,23 @@ class LogDownloader:
 
             for idx, row in enumerate(task_rows):
                 try:
-                    # 查找下载按钮
-                    download_btn_locator = None
-                    used_selector = None
+                    task_id = self._extract_task_id(row, idx)
+                    task_name = self._extract_task_name(row, idx)
 
-                    for selector in Selectors.DOWNLOAD_BUTTON:
-                        btn_locator = row.locator(selector)
-                        if btn_locator.count() > 0 and btn_locator.first.is_visible():
-                            download_btn_locator = btn_locator
-                            used_selector = selector
-                            break
+                    # 跳过无法提取 ID 的无效行
+                    if task_id.startswith("task_row_"):
+                        continue
 
-                    if download_btn_locator:
-                        task_id = self._extract_task_id(row, idx)
-                        task_name = self._extract_task_name(row, idx)
-
-                        tasks.append({
-                            "id": task_id,
-                            "name": task_name,
-                        })
-                        logging.debug(f"使用选择器 {used_selector} 找到任务: {task_id}")
+                    tasks.append({
+                        "id": task_id,
+                        "name": task_name,
+                    })
+                    logging.debug(f"找到任务: {task_id} ({task_name})")
 
                 except Exception as e:
                     logging.warning(f"解析任务行 {idx} 时出错: {e}")
 
-            logging.info(f"扫描完成,找到 {len(tasks)} 个可下载任务")
+            logging.info(f"扫描完成,找到 {len(tasks)} 个任务")
             return tasks
 
         except Exception as e:
@@ -654,16 +674,20 @@ class LogDownloader:
             # 步骤 1: 关闭可能存在的弹窗
             self._close_modals()
 
-            # 步骤 2: 勾选复选框
+            # 步骤 2: 勾选复选框（支持 iView 自定义复选框和原生复选框）
             logging.info(f"勾选任务 {task_id} 的复选框")
             try:
-                checkbox_locator = row.locator("input[type='checkbox']")
-                if checkbox_locator.count() > 0:
-                    if not checkbox_locator.first.is_checked():
+                checkbox_found = False
+                for selector in Selectors.CHECKBOX:
+                    checkbox_locator = row.locator(selector)
+                    if checkbox_locator.count() > 0:
                         checkbox_locator.first.click()
                         self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
-                    logging.info("已勾选复选框")
-                else:
+                        checkbox_found = True
+                        logging.info(f"已勾选复选框 (选择器: {selector})")
+                        break
+                if not checkbox_found:
+                    # 兜底：点击第一列单元格
                     first_cell_locator = row.locator("td:first-child")
                     if first_cell_locator.count() > 0:
                         first_cell_locator.first.click()
