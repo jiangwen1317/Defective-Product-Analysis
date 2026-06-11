@@ -84,36 +84,42 @@ class QueryEngine:
             if not summaries:
                 return []
 
+            # 批量查询所有 summary 的 metrics（解决 N+1 问题）
+            summary_ids = [s["id"] for s in summaries]
+            all_metrics = self._repo.get_metrics_by_summary_ids(
+                conn,
+                summary_ids,
+                section=section,
+                metric_key=metric_key,
+            )
+
+            # 多指标名过滤
+            if metric_keys and not metric_key:
+                all_metrics = [m for m in all_metrics if m["metric_key"] in metric_keys]
+
+            # 构建 summary_id → summary 的映射
+            summary_map = {s["id"]: s for s in summaries}
+
             results: list[dict] = []
-            for s in summaries:
-                metrics = self._repo.get_metrics(
-                    conn,
-                    summary_id=s["id"],
-                    section=section,
-                    metric_key=metric_key,
-                )
-
-                # 多指标名过滤
-                if metric_keys and not metric_key:
-                    metrics = [m for m in metrics if m["metric_key"] in metric_keys]
-
-                for m in metrics:
-                    # 合并 summary 和 metric 信息
-                    row = {
-                        "summary_id": s["id"],
-                        "device_name": s.get("device_name"),
-                        "fw_version": s.get("fw_version"),
-                        "parsed_at": s.get("parsed_at"),
-                        "overall_result": s.get("overall_result"),
-                        "section": m["section"],
-                        "metric_key": m["metric_key"],
-                        "metric_key_raw": m["metric_key_raw"],
-                        "raw_value": m["raw_value"],
-                        "num_value": m.get("num_value"),
-                        "value_type": m["value_type"],
-                        "prefix": m.get("prefix"),
-                    }
-                    results.append(row)
+            for m in all_metrics:
+                s = summary_map.get(m["summary_id"])
+                if s is None:
+                    continue
+                row = {
+                    "summary_id": s["id"],
+                    "device_name": s.get("device_name"),
+                    "fw_version": s.get("fw_version"),
+                    "parsed_at": s.get("parsed_at"),
+                    "overall_result": s.get("overall_result"),
+                    "section": m["section"],
+                    "metric_key": m["metric_key"],
+                    "metric_key_raw": m["metric_key_raw"],
+                    "raw_value": m["raw_value"],
+                    "num_value": m.get("num_value"),
+                    "value_type": m["value_type"],
+                    "prefix": m.get("prefix"),
+                }
+                results.append(row)
 
             return results
 

@@ -20,7 +20,6 @@ EMMC 测试日志解析与分析系统 - CLI 入口
   python main.py watch --signal-dir D:/signals/
 """
 import argparse
-import json
 import logging
 import os
 import sys
@@ -30,57 +29,15 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+from config import load_config, get_db_path, get_file_extensions, PROJECT_DIR, DEFAULT_CONFIG_PATH
 from database import DatabaseConnection, MetricsRepository
-from log_parser import LogParser
+from parse_service import ParseService
 from schema import init_database
 
 # 日志配置
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
-
-# 默认配置文件路径
-DEFAULT_CONFIG_PATH = os.path.join(_SCRIPT_DIR, "config.json")
-
-
-def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> dict:
-    """读取配置文件，返回配置字典。
-
-    Args:
-        config_path: 配置文件路径，默认使用脚本目录下的 config.json。
-
-    Returns:
-        配置字典。
-    """
-    if not os.path.exists(config_path):
-        logger.warning("配置文件不存在: %s，使用默认配置", config_path)
-        return {
-            "database": {"path": "emmc_analysis.db"},
-            "log_sources": {
-                "scan_dirs": [],
-                "file_extensions": [".txt", ".log"],
-            },
-            "export": {"report_dir": "reports"},
-            "anomaly_thresholds": {},
-        }
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def get_db_path(config: dict) -> str:
-    """从配置中获取数据库绝对路径。
-
-    Args:
-        config: 配置字典。
-
-    Returns:
-        数据库文件绝对路径。
-    """
-    db_path = config.get("database", {}).get("path", "emmc_analysis.db")
-    if not os.path.isabs(db_path):
-        db_path = os.path.join(_SCRIPT_DIR, db_path)
-    return db_path
 
 
 # ============================================================
@@ -102,10 +59,7 @@ def cmd_init_db(args: argparse.Namespace) -> None:
 def cmd_parse(args: argparse.Namespace) -> None:
     """解析日志文件入库。"""
     config = load_config(args.config)
-    db_path = get_db_path(config)
-    db = DatabaseConnection(db_path)
-    repo = MetricsRepository(db)
-    parser = LogParser()
+    db = DatabaseConnection(get_db_path(config))
 
     # 确保数据库已初始化
     with db.connect() as conn:
@@ -136,7 +90,7 @@ def cmd_parse(args: argparse.Namespace) -> None:
         logger.info("扫描并解压 %s 下的 ZIP 文件...", scan_dir)
         extract_all_zips(scan_dir)
 
-        extensions = config.get("log_sources", {}).get("file_extensions", [".txt", ".log"])
+        extensions = get_file_extensions(config)
         for root, _, files in os.walk(scan_dir):
             for fname in files:
                 if any(fname.endswith(ext) for ext in extensions):
@@ -151,112 +105,15 @@ def cmd_parse(args: argparse.Namespace) -> None:
         logger.info("无待解析文件")
         return
 
-    # 逐文件解析入库
-    success_count = 0
-    fail_count = 0
-    skip_count = 0
-
-    for file_path in file_paths:
-        file_name = os.path.basename(file_path)
-        logger.info("解析: %s", file_name)
-
-        try:
-            result = parser.parse_file(file_path)
-
-            with db.connect() as conn:
-                # 增量判断
-                if repo.is_file_processed(conn, file_path, result.file_size, result.file_mtime):
-                    logger.info("跳过（已处理且未变化）: %s", file_name)
-                    skip_count += 1
-                    continue
-
-                if result.status == "Failed":
-                    # 记录失败
-                    repo.insert_process_log(
-                        conn,
-                        file_path=file_path,
-                        file_size=result.file_size,
-                        file_mtime=result.file_mtime,
-                        action="failed",
-                        error_message=result.error,
-                    )
-                    fail_count += 1
-                    logger.error("解析失败: %s - %s", file_name, result.error)
-                    continue
-
-                # 清除同路径旧记录（文件内容变化时的重解析场景）
-                repo.delete_summary_by_filepath(conn, result.file_path)
-
-                # 插入主表
-                summary_id = repo.insert_summary(
-                    conn,
-                    file_name=result.file_name,
-                    file_path=result.file_path,
-                    file_size=result.file_size,
-                    file_mtime=result.file_mtime,
-                    device_name=result.device_name,
-                    device_tool_name=result.device_tool_name,
-                    device_config_name=result.device_config_name,
-                    fw_version=result.fw_version,
-                    mp_tool_version=result.mp_tool_version,
-                    flash_id=result.flash_id,
-                    original_bad_block=result.original_bad_block,
-                    cycles=result.cycles,
-                    overall_result=result.overall_result,
-                    fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
-                    controller=result.controller,
-                    capacity_mb=result.capacity_mb,
-                    capacity_sectors=result.capacity_sectors,
-                    part_number=result.part_number,
-                    task_link=result.task_link,
-                    test_cycle=result.test_cycle,
-                    test_case=result.test_case,
-                    rtms_result=result.rtms_result,
-                    rtms_code=result.rtms_code,
-                    wai=result.wai,
-                    slc_pe_min=result.slc_pe_min,
-                    slc_pe_max=result.slc_pe_max,
-                    tlc_pe_min=result.tlc_pe_min,
-                    tlc_pe_max=result.tlc_pe_max,
-                    increase_bad_block=result.increase_bad_block,
-                    parse_status=result.status,
-                )
-
-                # 批量插入指标
-                metric_tuples = [m.as_tuple() for m in result.metrics]
-                repo.insert_metrics_batch(conn, summary_id, metric_tuples)
-
-                # 记录处理日志
-                repo.insert_process_log(
-                    conn,
-                    file_path=file_path,
-                    file_size=result.file_size,
-                    file_mtime=result.file_mtime,
-                    action="parsed",
-                    summary_id=summary_id,
-                )
-
-            success_count += 1
-            logger.info(
-                "入库成功: %s | 指标数=%d | 结果=%s",
-                file_name, len(result.metrics), result.overall_result,
-            )
-
-        except Exception as exc:
-            fail_count += 1
-            logger.error("解析异常: %s - %s", file_name, exc, exc_info=True)
-
-    logger.info(
-        "解析完成: 成功=%d, 失败=%d, 跳过=%d, 总计=%d",
-        success_count, fail_count, skip_count, len(file_paths),
-    )
+    # 使用 ParseService 统一处理
+    service = ParseService(db)
+    service.process_files(file_paths)
 
 
 def cmd_query(args: argparse.Namespace) -> None:
     """查询数据。"""
     config = load_config(args.config)
-    db_path = get_db_path(config)
-    db = DatabaseConnection(db_path)
+    db = DatabaseConnection(get_db_path(config))
     repo = MetricsRepository(db)
 
     with db.connect() as conn:
@@ -285,23 +142,35 @@ def cmd_query(args: argparse.Namespace) -> None:
 
             # 如果指定了 section 或 metric_key，进一步查询指标
             if args.section or args.key:
-                for s in summaries:
-                    metrics = repo.get_metrics(
-                        conn,
-                        summary_id=s["id"],
-                        section=args.section,
-                        metric_key=args.key,
-                    )
-                    if metrics:
-                        print(f"\n--- 设备 {s.get('device_name', '')} (ID={s['id']}) 的指标 ---")
-                        print(f"{'Section':<35} | {'指标名':<25} | {'原始值':<20} | {'数值':>10}")
-                        print(f"{'-'*95}")
-                        for m in metrics:
-                            print(
-                                f"{m['section']:<35} | {m['metric_key_raw']:<25} | "
-                                f"{m['raw_value']:<20} | "
-                                f"{m.get('num_value','') or '':>10}"
-                            )
+                # 批量查询所有 summary 的 metrics（解决 N+1 问题）
+                summary_ids = [s["id"] for s in summaries]
+                all_metrics = repo.get_metrics_by_summary_ids(
+                    conn,
+                    summary_ids,
+                    section=args.section,
+                    metric_key=args.key,
+                )
+
+                # 按 summary_id 分组展示
+                from collections import defaultdict
+                grouped: dict[int, list[dict]] = defaultdict(list)
+                for m in all_metrics:
+                    grouped[m["summary_id"]].append(m)
+
+                summary_map = {s["id"]: s for s in summaries}
+                for sid, metrics in grouped.items():
+                    s = summary_map.get(sid)
+                    if not s:
+                        continue
+                    print(f"\n--- 设备 {s.get('device_name', '')} (ID={s['id']}) 的指标 ---")
+                    print(f"{'Section':<35} | {'指标名':<25} | {'原始值':<20} | {'数值':>10}")
+                    print(f"{'-'*95}")
+                    for m in metrics:
+                        print(
+                            f"{m['section']:<35} | {m['metric_key_raw']:<25} | "
+                            f"{m['raw_value']:<20} | "
+                            f"{m.get('num_value','') or '':>10}"
+                        )
         else:
             print("请指定查询条件：--device / --fw / --result / --section / --key")
 
@@ -309,8 +178,7 @@ def cmd_query(args: argparse.Namespace) -> None:
 def cmd_compare(args: argparse.Namespace) -> None:
     """对比分析。"""
     config = load_config(args.config)
-    db_path = get_db_path(config)
-    db = DatabaseConnection(db_path)
+    db = DatabaseConnection(get_db_path(config))
     repo = MetricsRepository(db)
 
     summary_ids = [int(x.strip()) for x in args.ids.split(",") if x.strip()]
@@ -366,14 +234,13 @@ def cmd_report(args: argparse.Namespace) -> None:
     from rma_report import RMAReportGenerator
 
     config = load_config(args.config)
-    db_path = get_db_path(config)
-    db = DatabaseConnection(db_path)
+    db = DatabaseConnection(get_db_path(config))
 
     output_path = args.output
     if not os.path.isabs(output_path):
         report_dir = config.get("export", {}).get("report_dir", "reports")
         if not os.path.isabs(report_dir):
-            report_dir = os.path.join(_SCRIPT_DIR, report_dir)
+            report_dir = os.path.join(PROJECT_DIR, report_dir)
         os.makedirs(report_dir, exist_ok=True)
         output_path = os.path.join(report_dir, output_path)
 
@@ -391,18 +258,17 @@ def cmd_watch(args: argparse.Namespace) -> None:
     from file_watcher import FileWatcher
 
     config = load_config(args.config)
-    db_path = get_db_path(config)
 
     signal_dir = args.signal_dir
     if not signal_dir:
         signal_dir = config.get("signal", {}).get("signal_dir", "signals")
     if not os.path.isabs(signal_dir):
-        signal_dir = os.path.join(_SCRIPT_DIR, signal_dir)
+        signal_dir = os.path.join(PROJECT_DIR, signal_dir)
 
     poll_interval = config.get("signal", {}).get("poll_interval_seconds", 5)
 
     watcher = FileWatcher(
-        db_path=db_path,
+        db_path=get_db_path(config),
         signal_dir=signal_dir,
         config=config,
     )

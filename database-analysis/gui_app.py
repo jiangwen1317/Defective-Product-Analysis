@@ -26,8 +26,9 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+from config import load_config, get_db_path, get_file_extensions, PROJECT_DIR
 from database import DatabaseConnection, MetricsRepository
-from log_parser import LogParser
+from parse_service import ParseService
 from schema import init_database
 
 logger = logging.getLogger(__name__)
@@ -35,26 +36,6 @@ logger = logging.getLogger(__name__)
 # 主题配置
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
-
-# 默认配置文件路径
-DEFAULT_CONFIG_PATH = os.path.join(_SCRIPT_DIR, "config.json")
-
-
-def load_config() -> dict:
-    """读取配置文件。"""
-    if not os.path.exists(DEFAULT_CONFIG_PATH):
-        return {"database": {"path": "emmc_analysis.db"}}
-    with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def get_db_path() -> str:
-    """获取数据库绝对路径。"""
-    config = load_config()
-    db_path = config.get("database", {}).get("path", "emmc_analysis.db")
-    if not os.path.isabs(db_path):
-        db_path = os.path.join(_SCRIPT_DIR, db_path)
-    return db_path
 
 
 class App(ctk.CTk):
@@ -70,6 +51,8 @@ class App(ctk.CTk):
         # 数据库初始化
         self._db_path = get_db_path()
         self._db = DatabaseConnection(self._db_path)
+        self._repo = MetricsRepository(self._db)
+        self._parse_service = ParseService(self._db, self._repo)
         self._init_db()
 
         # 构建界面
@@ -193,7 +176,12 @@ class App(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             messagebox.showwarning("提示", "请先选择有效的日志文件")
             return
-        threading.Thread(target=self._do_parse, args=([file_path],), daemon=True).start()
+
+        def _run() -> None:
+            self._parse_service.process_files([file_path], on_log=self._log_parse)
+            self._update_status()
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _parse_directory(self) -> None:
         from file_watcher import extract_all_zips, discover_log_files
@@ -209,86 +197,21 @@ class App(ctk.CTk):
             self._log_parse("正在解压 ZIP 文件...")
             extract_all_zips(directory)
             # 发现日志文件
-            config = load_config()
-            extensions = config.get("log_sources", {}).get("file_extensions", [".txt", ".log"])
+            extensions = get_file_extensions()
             files = discover_log_files(directory, extensions)
             self._log_parse(f"发现 {len(files)} 个日志文件")
             # 解析
-            self._do_parse(files)
+            self._parse_service.process_files(files, on_log=self._log_parse)
+            self._update_status()
 
         threading.Thread(target=_run, daemon=True).start()
 
     def _do_parse(self, file_paths: list[str]) -> None:
-        """执行解析入库（在后台线程运行）。"""
-        parser = LogParser()
-        repo = MetricsRepository(self._db)
-        success = failed = skipped = 0
+        """执行解析入库（在后台线程运行）。
 
-        for file_path in file_paths:
-            file_name = os.path.basename(file_path)
-            self._log_parse(f"解析: {file_name}")
-
-            try:
-                result = parser.parse_file(file_path)
-
-                with self._db.connect() as conn:
-                    if repo.is_file_processed(conn, file_path, result.file_size, result.file_mtime):
-                        self._log_parse(f"  ⏭️ 跳过（已处理）: {file_name}")
-                        skipped += 1
-                        continue
-
-                    if result.status == "Failed":
-                        repo.insert_process_log(
-                            conn, file_path=file_path, file_size=result.file_size,
-                            file_mtime=result.file_mtime, action="failed",
-                            error_message=result.error,
-                        )
-                        self._log_parse(f"  ❌ 失败: {file_name} - {result.error}")
-                        failed += 1
-                        continue
-
-                    # 清除同路径旧记录（文件内容变化时的重解析场景）
-                    repo.delete_summary_by_filepath(conn, result.file_path)
-
-                    summary_id = repo.insert_summary(
-                        conn,
-                        file_name=result.file_name, file_path=result.file_path,
-                        file_size=result.file_size, file_mtime=result.file_mtime,
-                        device_name=result.device_name, device_tool_name=result.device_tool_name,
-                        device_config_name=result.device_config_name,
-                        fw_version=result.fw_version, mp_tool_version=result.mp_tool_version,
-                        flash_id=result.flash_id, original_bad_block=result.original_bad_block,
-                        cycles=result.cycles, overall_result=result.overall_result,
-                        fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
-                        controller=result.controller,
-                        capacity_mb=result.capacity_mb,
-                        capacity_sectors=result.capacity_sectors,
-                        part_number=result.part_number,
-                        task_link=result.task_link,
-                        test_cycle=result.test_cycle,
-                        test_case=result.test_case,
-                        rtms_result=result.rtms_result,
-                        rtms_code=result.rtms_code,
-                        wai=result.wai, slc_pe_min=result.slc_pe_min, slc_pe_max=result.slc_pe_max,
-                        tlc_pe_min=result.tlc_pe_min, tlc_pe_max=result.tlc_pe_max,
-                        increase_bad_block=result.increase_bad_block,
-                    )
-                    repo.insert_metrics_batch(conn, summary_id, [m.as_tuple() for m in result.metrics])
-                    repo.insert_process_log(
-                        conn, file_path=file_path, file_size=result.file_size,
-                        file_mtime=result.file_mtime, action="parsed", summary_id=summary_id,
-                    )
-
-                success += 1
-                self._log_parse(
-                    f"  ✅ 入库: {file_name} | 指标={len(result.metrics)} | 结果={result.overall_result}"
-                )
-            except Exception as exc:
-                failed += 1
-                self._log_parse(f"  ❌ 异常: {file_name} - {exc}")
-
-        self._log_parse(f"\n{'='*50}")
-        self._log_parse(f"处理完成: 成功={success}, 失败={failed}, 跳过={skipped}")
+        已委托给 ParseService，此方法保留为向后兼容的包装器。
+        """
+        self._parse_service.process_files(file_paths, on_log=self._log_parse)
         self._update_status()
 
     def _clear_database(self) -> None:
@@ -465,32 +388,41 @@ class App(ctk.CTk):
 
         row_count = 0
         with self._db.connect() as conn:
-            for s in summaries:
-                metrics = repo.get_metrics(
-                    conn, summary_id=s["id"],
-                    section=section_filter, metric_key=key_filter,
-                )
-                for m in metrics:
-                    # 容量显示：优先 MB，其次扇区
-                    cap_display = ""
-                    if s.get("capacity_mb"):
-                        cap_display = f"{s['capacity_mb']} MB"
-                    elif s.get("capacity_sectors"):
-                        cap_display = f"{s['capacity_sectors']} Sec"
+            # 批量查询所有 summary 的 metrics（解决 N+1 问题）
+            summary_ids = [s["id"] for s in summaries]
+            all_metrics = repo.get_metrics_by_summary_ids(
+                conn, summary_ids,
+                section=section_filter, metric_key=key_filter,
+            )
 
-                    self._query_tree.insert("", "end", values=(
-                        s["id"],
-                        s.get("device_name", ""),
-                        s.get("fw_version", ""),
-                        s.get("flash_id", ""),
-                        cap_display,
-                        m["section"],
-                        m["metric_key_raw"],
-                        m["raw_value"],
-                        m.get("num_value", "") or "",
-                        s.get("overall_result", ""),
-                    ))
-                    row_count += 1
+            # 构建 summary_id → summary 的映射
+            summary_map = {s["id"]: s for s in summaries}
+
+            for m in all_metrics:
+                s = summary_map.get(m["summary_id"])
+                if s is None:
+                    continue
+
+                # 容量显示：优先 MB，其次扇区
+                cap_display = ""
+                if s.get("capacity_mb"):
+                    cap_display = f"{s['capacity_mb']} MB"
+                elif s.get("capacity_sectors"):
+                    cap_display = f"{s['capacity_sectors']} Sec"
+
+                self._query_tree.insert("", "end", values=(
+                    s["id"],
+                    s.get("device_name", ""),
+                    s.get("fw_version", ""),
+                    s.get("flash_id", ""),
+                    cap_display,
+                    m["section"],
+                    m["metric_key_raw"],
+                    m["raw_value"],
+                    m.get("num_value", "") or "",
+                    s.get("overall_result", ""),
+                ))
+                row_count += 1
 
         self._query_count_label.configure(text=f"查询结果: {row_count} 条指标（来自 {len(summaries)} 条记录）")
 

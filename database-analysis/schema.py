@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS test_summary (
     original_bad_block  INTEGER,
 
     -- 汇总
-    cycles              INTEGER DEFAULT 0,
-    overall_result      TEXT,
+    cycles              INTEGER DEFAULT 0 CHECK(cycles >= 0),
+    overall_result      TEXT    CHECK(overall_result IN ('Pass', 'Fail', 'Unknown')),
     fail_sections       TEXT,
 
     -- 设备扩展信息
@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS test_summary (
     task_link           TEXT,
 
     -- 测试参数
-    test_cycle          INTEGER DEFAULT 0,
-    test_case           INTEGER DEFAULT 0,
+    test_cycle          INTEGER DEFAULT 0 CHECK(test_cycle >= 0),
+    test_case           INTEGER DEFAULT 0 CHECK(test_case >= 0),
 
     -- 最终结果
     rtms_result         TEXT,
@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS test_summary (
     -- 处理元数据
     parsed_at           TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     parse_status        TEXT    NOT NULL DEFAULT 'Success'
+                        CHECK(parse_status IN ('Success', 'Failed', 'Partial'))
 );
 """
 
@@ -85,7 +86,8 @@ CREATE TABLE IF NOT EXISTS test_metrics (
     metric_key_raw  TEXT    NOT NULL,
     raw_value       TEXT    NOT NULL,
     num_value       REAL,
-    value_type      TEXT    NOT NULL DEFAULT 'string',
+    value_type      TEXT    NOT NULL DEFAULT 'string'
+                        CHECK(value_type IN ('hex', 'decimal', 'float', 'string', 'hexdump')),
     prefix          TEXT,
     array_index     TEXT,
 
@@ -121,7 +123,7 @@ CREATE TABLE IF NOT EXISTS process_log (
     file_path       TEXT    NOT NULL,
     file_size       INTEGER NOT NULL,
     file_mtime      REAL    NOT NULL,
-    action          TEXT    NOT NULL,
+    action          TEXT    NOT NULL CHECK(action IN ('parsed', 'skipped', 'failed')),
     summary_id      INTEGER,
     error_message   TEXT,
     processed_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),

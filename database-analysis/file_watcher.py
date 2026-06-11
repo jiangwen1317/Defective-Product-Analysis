@@ -6,16 +6,15 @@
 2. 基于 (file_path, file_size, file_mtime) 的增量判断
 3. 信号文件 (.signal) 监听与触发
 """
-import json
 import logging
 import os
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Optional
+from typing import Optional
 
 from database import DatabaseConnection, MetricsRepository
-from log_parser import LogParser
+from parse_service import ParseService
 from schema import init_database
 
 logger = logging.getLogger(__name__)
@@ -162,7 +161,7 @@ class FileWatcher:
         self._config = config
         self._db = DatabaseConnection(db_path)
         self._repo = MetricsRepository(self._db)
-        self._parser = LogParser()
+        self._parse_service = ParseService(self._db, self._repo)
 
     def process_directory(self, directory: str) -> tuple[int, int, int]:
         """处理指定目录：先解压 ZIP，再增量解析日志文件。
@@ -193,94 +192,8 @@ class FileWatcher:
         Returns:
             (success, failed, skipped) 三元组。
         """
-        success = 0
-        failed = 0
-        skipped = 0
-
-        for file_path in file_paths:
-            file_name = os.path.basename(file_path)
-
-            try:
-                result = self._parser.parse_file(file_path)
-
-                with self._db.connect() as conn:
-                    # 增量判断
-                    if self._repo.is_file_processed(conn, file_path, result.file_size, result.file_mtime):
-                        logger.debug("跳过（已处理）: %s", file_name)
-                        skipped += 1
-                        continue
-
-                    if result.status == "Failed":
-                        self._repo.insert_process_log(
-                            conn,
-                            file_path=file_path,
-                            file_size=result.file_size,
-                            file_mtime=result.file_mtime,
-                            action="failed",
-                            error_message=result.error,
-                        )
-                        failed += 1
-                        logger.error("解析失败: %s - %s", file_name, result.error)
-                        continue
-
-                    # 清除同路径旧记录（文件内容变化时的重解析场景）
-                    self._repo.delete_summary_by_filepath(conn, result.file_path)
-
-                    summary_id = self._repo.insert_summary(
-                        conn,
-                        file_name=result.file_name,
-                        file_path=result.file_path,
-                        file_size=result.file_size,
-                        file_mtime=result.file_mtime,
-                        device_name=result.device_name,
-                        device_tool_name=result.device_tool_name,
-                        device_config_name=result.device_config_name,
-                        fw_version=result.fw_version,
-                        mp_tool_version=result.mp_tool_version,
-                        flash_id=result.flash_id,
-                        original_bad_block=result.original_bad_block,
-                        cycles=result.cycles,
-                        overall_result=result.overall_result,
-                        fail_sections=json.dumps(result.fail_sections, ensure_ascii=False),
-                        wai=result.wai,
-                        slc_pe_min=result.slc_pe_min,
-                        slc_pe_max=result.slc_pe_max,
-                        tlc_pe_min=result.tlc_pe_min,
-                        tlc_pe_max=result.tlc_pe_max,
-                        increase_bad_block=result.increase_bad_block,
-                        parse_status=result.status,
-                        controller=result.controller,
-                        capacity_mb=result.capacity_mb,
-                        capacity_sectors=result.capacity_sectors,
-                        part_number=result.part_number,
-                        task_link=result.task_link,
-                        test_cycle=result.test_cycle,
-                        test_case=result.test_case,
-                        rtms_result=result.rtms_result,
-                        rtms_code=result.rtms_code,
-                    )
-
-                    metric_tuples = [m.as_tuple() for m in result.metrics]
-                    self._repo.insert_metrics_batch(conn, summary_id, metric_tuples)
-
-                    self._repo.insert_process_log(
-                        conn,
-                        file_path=file_path,
-                        file_size=result.file_size,
-                        file_mtime=result.file_mtime,
-                        action="parsed",
-                        summary_id=summary_id,
-                    )
-
-                success += 1
-                logger.info("入库: %s | 指标=%d | 结果=%s", file_name, len(result.metrics), result.overall_result)
-
-            except Exception as exc:
-                failed += 1
-                logger.error("异常: %s - %s", file_name, exc, exc_info=True)
-
-        logger.info("处理完成: 成功=%d, 失败=%d, 跳过=%d", success, failed, skipped)
-        return success, failed, skipped
+        result = self._parse_service.process_files(file_paths)
+        return result.success, result.failed, result.skipped
 
     # ---- 信号文件监听 ----
 

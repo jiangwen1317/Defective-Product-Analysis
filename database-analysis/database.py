@@ -298,6 +298,46 @@ class MetricsRepository:
         rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_metrics_by_summary_ids(
+        self,
+        conn: sqlite3.Connection,
+        summary_ids: list[int],
+        *,
+        section: Optional[str] = None,
+        metric_key: Optional[str] = None,
+    ) -> list[dict]:
+        """批量查询多个 summary 的指标（解决 N+1 查询问题）。
+
+        使用 IN 查询一次拉取所有 summary 的 metrics，
+        替代循环调用 get_metrics 的 N+1 模式。
+
+        Args:
+            conn: 数据库连接。
+            summary_ids: 主表 ID 列表。
+            section: Section 名过滤（可选）。
+            metric_key: 指标名过滤（可选）。
+
+        Returns:
+            符合条件的指标字典列表，包含 summary_id 字段。
+        """
+        if not summary_ids:
+            return []
+
+        placeholders = ",".join("?" * len(summary_ids))
+        sql = f"SELECT * FROM test_metrics WHERE summary_id IN ({placeholders})"
+        params: list = list(summary_ids)
+
+        if section:
+            sql += " AND section = ?"
+            params.append(section)
+        if metric_key:
+            sql += " AND metric_key = ?"
+            params.append(metric_key)
+
+        sql += " ORDER BY summary_id, id"
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def get_metric_values_across_devices(
         self,
         conn: sqlite3.Connection,
