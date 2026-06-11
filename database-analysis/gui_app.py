@@ -19,7 +19,6 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-import numpy as np
 
 # 将脚本目录加入 Python 路径
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -206,14 +205,6 @@ class App(ctk.CTk):
 
         threading.Thread(target=_run, daemon=True).start()
 
-    def _do_parse(self, file_paths: list[str]) -> None:
-        """执行解析入库（在后台线程运行）。
-
-        已委托给 ParseService，此方法保留为向后兼容的包装器。
-        """
-        self._parse_service.process_files(file_paths, on_log=self._log_parse)
-        self._update_status()
-
     def _clear_database(self) -> None:
         if not messagebox.askyesno("确认", "确定要清空数据库中所有数据吗？此操作不可撤销！"):
             return
@@ -345,7 +336,7 @@ class App(ctk.CTk):
 
     def _do_query(self) -> None:
         """执行查询。"""
-        repo = MetricsRepository(self._db)
+        repo = self._repo
 
         # 解析容量值（支持 MB 和扇区数两种格式）
         capacity_mb = None
@@ -466,7 +457,7 @@ class App(ctk.CTk):
         ):
             return
 
-        repo = MetricsRepository(self._db)
+        repo = self._repo
         with self._db.connect() as conn:
             deleted = repo.delete_summaries_by_ids(conn, id_list)
 
@@ -605,7 +596,7 @@ class App(ctk.CTk):
             messagebox.showwarning("提示", "请输入指标名")
             return
 
-        repo = MetricsRepository(self._db)
+        repo = self._repo
 
         # 收集数据
         records: list[dict] = []

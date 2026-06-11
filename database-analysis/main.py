@@ -23,6 +23,7 @@ import argparse
 import logging
 import os
 import sys
+from collections import defaultdict
 
 # 将脚本目录加入 Python 路径，确保相对导入可用
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -152,7 +153,6 @@ def cmd_query(args: argparse.Namespace) -> None:
                 )
 
                 # 按 summary_id 分组展示
-                from collections import defaultdict
                 grouped: dict[int, list[dict]] = defaultdict(list)
                 for m in all_metrics:
                     grouped[m["summary_id"]].append(m)
@@ -194,7 +194,6 @@ def cmd_compare(args: argparse.Namespace) -> None:
         return
 
     # 按 metric_key 分组展示
-    from collections import defaultdict
     grouped: dict[str, dict] = defaultdict(dict)
     for m in all_metrics:
         key = f"{m['section']}/{m['metric_key_raw']}"

@@ -8,6 +8,7 @@
 4. 趋势数据提取（WAI/PE/BadBlock/ECC）
 """
 import logging
+from collections import defaultdict
 from typing import Optional
 
 from database import DatabaseConnection, MetricsRepository
@@ -195,7 +196,6 @@ class QueryEngine:
             return []
 
         # 按 (section, metric_key_raw) 分组
-        from collections import defaultdict
         grouped: dict[str, dict[int, dict]] = defaultdict(dict)
         for m in all_metrics:
             key = f"{m['section']}|{m['metric_key_raw']}"

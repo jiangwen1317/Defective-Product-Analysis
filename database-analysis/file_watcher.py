@@ -6,6 +6,7 @@
 2. 基于 (file_path, file_size, file_mtime) 的增量判断
 3. 信号文件 (.signal) 监听与触发
 """
+import json
 import logging
 import os
 import time

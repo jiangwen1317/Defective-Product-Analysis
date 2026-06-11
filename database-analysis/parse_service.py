@@ -157,6 +157,30 @@ class ParseService:
         _log = on_log or (lambda msg: logger.info(msg))
 
         try:
+            # 增量判断前置：轻量级 os.stat 避免不必要的完整解析
+            try:
+                stat = os.stat(file_path)
+            except OSError as exc:
+                _log(f"  ❌ 文件访问失败: {file_name} - {exc}")
+                return FileProcessResult(
+                    file_name=file_name,
+                    file_path=file_path,
+                    action="failed",
+                    error=f"文件访问失败: {exc}",
+                )
+
+            with self._db.connect() as conn:
+                if self._repo.is_file_processed(
+                    conn, file_path, stat.st_size, stat.st_mtime
+                ):
+                    _log(f"  ⏭️ 跳过（已处理且未变化）: {file_name}")
+                    return FileProcessResult(
+                        file_name=file_name,
+                        file_path=file_path,
+                        action="skipped",
+                    )
+
+            # 完整解析（仅在需要时执行）
             result = self._parser.parse_file(file_path)
 
             # 数据验证
@@ -183,17 +207,6 @@ class ParseService:
                 )
 
             with self._db.connect() as conn:
-                # 增量判断
-                if self._repo.is_file_processed(
-                    conn, file_path, result.file_size, result.file_mtime
-                ):
-                    _log(f"  ⏭️ 跳过（已处理且未变化）: {file_name}")
-                    return FileProcessResult(
-                        file_name=file_name,
-                        file_path=file_path,
-                        action="skipped",
-                    )
-
                 # 解析失败
                 if result.status == "Failed":
                     self._repo.insert_process_log(

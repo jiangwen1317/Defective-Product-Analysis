@@ -4,6 +4,9 @@
 定义 test_summary / test_metrics / process_log 三张表的 DDL，
 提供初始化函数在首次运行时自动建表建索引。
 """
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # 主表：测试摘要（每个日志文件一条记录）
@@ -11,8 +14,8 @@
 CREATE_TEST_SUMMARY = """
 CREATE TABLE IF NOT EXISTS test_summary (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_name           TEXT    NOT NULL UNIQUE,
-    file_path           TEXT    NOT NULL,
+    file_name           TEXT    NOT NULL,
+    file_path           TEXT    NOT NULL UNIQUE,
     file_size           INTEGER NOT NULL,
     file_mtime          REAL    NOT NULL,
 
@@ -155,9 +158,11 @@ _MIGRATE_SUMMARY_COLUMNS = [
 
 
 def _migrate(conn: "sqlite3.Connection") -> None:
-    """为已有表添加缺失列（幂等操作）。
+    """为已有表添加缺失列，并修复 UNIQUE 约束（幂等操作）。
 
     通过 PRAGMA table_info 检查现有列，仅 ALTER TABLE 添加缺失列。
+    如果 file_name 上存在 UNIQUE 约束（旧版 schema），则通过表重建
+    将 UNIQUE 约束迁移到 file_path 上。
 
     Args:
         conn: 已打开的 SQLite 连接。
@@ -181,6 +186,67 @@ def _migrate(conn: "sqlite3.Connection") -> None:
             cursor.execute(
                 f"ALTER TABLE test_summary ADD COLUMN {col_name} {col_type};"
             )
+
+    # 检查是否需要将 UNIQUE 约束从 file_name 迁移到 file_path
+    cursor.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type='table' AND name='test_summary' AND sql LIKE '%file_name%UNIQUE%'"
+    )
+    needs_unique_fix = cursor.fetchone() is not None
+
+    if needs_unique_fix:
+        logger.info("检测到 file_name UNIQUE 约束，正在迁移到 file_path...")
+        _rebuild_summary_table(conn)
+        logger.info("UNIQUE 约束迁移完成")
+
+
+def _rebuild_summary_table(conn: "sqlite3.Connection") -> None:
+    """重建 test_summary 表，将 UNIQUE 约束从 file_name 移到 file_path。
+
+    采用 rename → create new → copy data → drop old 的安全模式，
+    保留所有现有数据。外键约束在操作期间临时禁用。
+    """
+    cursor = conn.cursor()
+
+    # 获取现有表的实际列名
+    cursor.execute("PRAGMA table_info(test_summary);")
+    columns = [row[1] for row in cursor.fetchall()]
+    col_list = ", ".join(columns)
+
+    # 禁用外键约束（仅在重建期间）
+    cursor.execute("PRAGMA foreign_keys=OFF;")
+
+    try:
+        cursor.execute("ALTER TABLE test_summary RENAME TO _test_summary_old;")
+        cursor.execute(CREATE_TEST_SUMMARY)
+        cursor.execute(
+            f"INSERT INTO test_summary ({col_list}) "
+            f"SELECT {col_list} FROM _test_summary_old;"
+        )
+        cursor.execute("DROP TABLE _test_summary_old;")
+
+        # 重建索引（旧索引随旧表一起被删除）
+        for sql in CREATE_SUMMARY_INDEXES:
+            cursor.execute(sql)
+    except Exception:
+        # 回滚尝试：如果新表已创建但数据拷贝失败，尝试恢复旧表
+        cursor.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='_test_summary_old'"
+        )
+        if cursor.fetchone() is not None:
+            cursor.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='test_summary'"
+            )
+            if cursor.fetchone() is not None:
+                cursor.execute("DROP TABLE test_summary")
+            cursor.execute(
+                "ALTER TABLE _test_summary_old RENAME TO test_summary;"
+            )
+        raise
+    finally:
+        cursor.execute("PRAGMA foreign_keys=ON;")
 
 
 def init_database(conn: "sqlite3.Connection") -> None:

@@ -330,12 +330,10 @@ class TestLogParserFile:
     # ---- 边界场景 ----
 
     def test_nonexistent_file(self, parser):
-        """parse_file 在 try 之前调用 os.path.getsize，不存在时抛 FileNotFoundError。
-
-        注意：这是当前实现的行为，后续可考虑将 getsize 移入 try 块。
-        """
-        with pytest.raises(FileNotFoundError):
-            parser.parse_file("/nonexistent/path/file.txt")
+        """parse_file 对不存在的文件返回 status='Failed'，而非抛异常。"""
+        result = parser.parse_file("/nonexistent/path/file.txt")
+        assert result.status == "Failed"
+        assert "文件访问失败" in result.error
 
     def test_empty_file(self, parser, tmp_path):
         empty_file = tmp_path / "empty.txt"

@@ -79,21 +79,28 @@ class RMAReportGenerator:
             if not summaries:
                 logger.warning("无数据可导出")
 
-            # 获取指标数据
+            # 批量获取指标数据（解决 N+1 查询问题）
             all_metrics: list[dict] = []
-            for s in summaries:
-                metrics = self._repo.get_metrics(conn, summary_id=s["id"])
-                if include_sections:
-                    metrics = [m for m in metrics if m["section"] in include_sections]
-                if metric_keys:
-                    metrics = [m for m in metrics if m["metric_key"] in metric_keys]
-                # 附加 summary 信息
-                for m in metrics:
+            if summaries:
+                summary_ids = [s["id"] for s in summaries]
+                summary_map = {s["id"]: s for s in summaries}
+                raw_metrics = self._repo.get_metrics_by_summary_ids(
+                    conn, summary_ids,
+                )
+
+                for m in raw_metrics:
+                    if include_sections and m["section"] not in include_sections:
+                        continue
+                    if metric_keys and m["metric_key"] not in metric_keys:
+                        continue
+                    s = summary_map.get(m["summary_id"])
+                    if s is None:
+                        continue
                     m["device_name"] = s.get("device_name")
                     m["fw_version"] = s.get("fw_version")
                     m["parsed_at"] = s.get("parsed_at")
                     m["overall_result"] = s.get("overall_result")
-                all_metrics.extend(metrics)
+                    all_metrics.append(m)
 
             # 获取 Fail 记录
             fail_summaries = [s for s in summaries if s.get("overall_result") == "Fail"]

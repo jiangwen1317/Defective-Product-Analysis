@@ -120,9 +120,6 @@ _RE_HEX_DUMP_LINE = re.compile(r'^\s*\.\.\.\d+:\s+[\dA-Fa-f\s]+$')
 # Hex Dump Offset 表头行
 _RE_HEX_OFFSET_HEADER = re.compile(r'^\s*Offset:')
 
-# 带前缀的键名：[SLC] WearGap
-_RE_PREFIX = re.compile(r'^\[([A-Z]+)\]\s*(.+)$')
-
 # 带数组下标的键名：bFWVersion[64]
 _RE_ARRAY = re.compile(r'^(.+?)\[(\d+)\]$')
 
@@ -385,19 +382,27 @@ class LogParser:
         Returns:
             ParseResult 对象，包含所有解析出的指标和元数据。
         """
-        file_name = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
-        file_mtime = os.path.getmtime(file_path)
-
         result = ParseResult(
-            file_name=file_name,
+            file_name=os.path.basename(file_path),
             file_path=file_path,
-            file_size=file_size,
-            file_mtime=file_mtime,
+            file_size=0,
+            file_mtime=0.0,
         )
 
         try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            file_size = os.path.getsize(file_path)
+            file_mtime = os.path.getmtime(file_path)
+            result.file_size = file_size
+            result.file_mtime = file_mtime
+        except OSError as exc:
+            result.status = "Failed"
+            result.error = f"文件访问失败: {exc}"
+            logger.error("文件访问失败 %s: %s", file_path, exc)
+            return result
+
+        try:
+            # 使用 utf-8-sig 自动处理 Windows BOM
+            with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 lines = f.read().splitlines()
         except Exception as exc:
             result.status = "Failed"
