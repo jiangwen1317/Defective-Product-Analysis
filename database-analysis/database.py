@@ -11,14 +11,19 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+# 默认 SQLite 锁等待超时（秒）
+_DEFAULT_TIMEOUT = 30
+
+
 class DatabaseConnection:
     """SQLite 连接管理器（上下文管理器模式）。
 
     使用 WAL 模式支持并发读，启用外键约束。
     """
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, timeout: float = _DEFAULT_TIMEOUT) -> None:
         self._db_path = db_path
+        self._timeout = timeout
 
     @contextmanager
     def connect(self):
@@ -27,7 +32,7 @@ class DatabaseConnection:
         Yields:
             sqlite3.Connection: 配置好的数据库连接。
         """
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, timeout=self._timeout)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         conn.row_factory = sqlite3.Row
@@ -429,25 +434,27 @@ class MetricsRepository:
 
     # ---- 删除 ----
 
-    def delete_summary_by_filename(
+    def delete_summary_by_filepath(
         self,
         conn: sqlite3.Connection,
-        file_name: str,
+        file_path: str,
     ) -> bool:
-        """按文件名删除主表记录（级联删除关联指标）。
+        """按文件路径删除主表记录（级联删除关联指标）。
 
         用于文件内容变化后的重解析场景：先删除旧记录，再插入新记录。
+        使用 file_path（绝对路径）而非 file_name 进行匹配，
+        避免不同目录下的同名文件互相覆盖数据。
 
         Args:
             conn: 当前事务连接。
-            file_name: 文件名。
+            file_path: 文件绝对路径。
 
         Returns:
             True 表示删除了记录，False 表示无匹配记录。
         """
         cursor = conn.execute(
-            "DELETE FROM test_summary WHERE file_name = ?",
-            (file_name,),
+            "DELETE FROM test_summary WHERE file_path = ?",
+            (file_path,),
         )
         return cursor.rowcount > 0
 

@@ -364,7 +364,7 @@ class TestIncrementalAndDelete:
         with db.connect() as conn:
             assert repo.is_file_processed(conn, "/tmp/test.txt", 100, 1000.0) is False
 
-    def test_delete_summary_by_filename(self, tmp_db):
+    def test_delete_summary_by_filepath(self, tmp_db):
         db, repo = tmp_db
         with db.connect() as conn:
             sid = repo.insert_summary(
@@ -380,7 +380,7 @@ class TestIncrementalAndDelete:
             repo.insert_metrics_batch(conn, sid, metrics)
 
         with db.connect() as conn:
-            deleted = repo.delete_summary_by_filename(conn, "test.txt")
+            deleted = repo.delete_summary_by_filepath(conn, "/tmp/test.txt")
             assert deleted is True
 
         # 验证主表和指标均已删除（CASCADE）
@@ -393,7 +393,7 @@ class TestIncrementalAndDelete:
     def test_delete_summary_nonexistent(self, tmp_db):
         db, repo = tmp_db
         with db.connect() as conn:
-            deleted = repo.delete_summary_by_filename(conn, "no_such_file.txt")
+            deleted = repo.delete_summary_by_filepath(conn, "/no/such/file.txt")
             assert deleted is False
 
     def test_delete_summary_by_id(self, tmp_db):
@@ -520,7 +520,7 @@ class TestEndToEnd:
 
         # 模拟文件变化后重解析（先删除旧记录再插入）
         with db.connect() as conn:
-            repo.delete_summary_by_filename(conn, result_log1.file_name)
+            repo.delete_summary_by_filepath(conn, result_log1.file_path)
             sid2 = repo.insert_summary(
                 conn,
                 file_name=result_log1.file_name,

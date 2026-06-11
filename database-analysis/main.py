@@ -184,8 +184,8 @@ def cmd_parse(args: argparse.Namespace) -> None:
                     logger.error("解析失败: %s - %s", file_name, result.error)
                     continue
 
-                # 清除同名旧记录（文件内容变化时的重解析场景）
-                repo.delete_summary_by_filename(conn, result.file_name)
+                # 清除同路径旧记录（文件内容变化时的重解析场景）
+                repo.delete_summary_by_filepath(conn, result.file_path)
 
                 # 插入主表
                 summary_id = repo.insert_summary(

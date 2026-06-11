@@ -247,8 +247,8 @@ class App(ctk.CTk):
                         failed += 1
                         continue
 
-                    # 清除同名旧记录（文件内容变化时的重解析场景）
-                    repo.delete_summary_by_filename(conn, result.file_name)
+                    # 清除同路径旧记录（文件内容变化时的重解析场景）
+                    repo.delete_summary_by_filepath(conn, result.file_path)
 
                     summary_id = repo.insert_summary(
                         conn,
@@ -295,9 +295,10 @@ class App(ctk.CTk):
         if not messagebox.askyesno("确认", "确定要清空数据库中所有数据吗？此操作不可撤销！"):
             return
         with self._db.connect() as conn:
+            # 按依赖关系逆序删除：先删子表，最后删主表
+            conn.execute("DELETE FROM process_log")
             conn.execute("DELETE FROM test_metrics")
             conn.execute("DELETE FROM test_summary")
-            conn.execute("DELETE FROM process_log")
         self._log_parse("数据库已清空")
         self._update_status()
 

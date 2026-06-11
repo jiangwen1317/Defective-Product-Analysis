@@ -131,6 +131,10 @@ _RE_ARRAY = re.compile(r'^(.+?)\[(\d+)\]$')
 # "rtms_get_var:27"
 _RE_RTMS_VAR = re.compile(r'^(rtms_str_var|rtms_get_var):(.+)$')
 
+# 从 info:Capacity:NNN Sec 格式提取扇区数
+# "info:Capacity:122224640 Sec"
+_RE_INFO_CAPACITY_SECTORS = re.compile(r'^Capacity\s*:\s*(\d+)\s*Sec')
+
 # 已知的测试 Section 名称白名单（用于内联结果识别，避免误匹配普通 KV）
 _KNOWN_TEST_SECTIONS: set[str] = {
     "Wear_Detection",
@@ -482,10 +486,9 @@ class LogParser:
 
         # 从 info:Capacity:NNN Sec 格式提取扇区数
         if result.capacity_sectors is None:
-            _re_info_cap = re.compile(r'^Capacity\s*:\s*(\d+)\s*Sec')
             for m in result.metrics:
                 if m.key == "info" and result.capacity_sectors is None:
-                    cap_match = _re_info_cap.match(m.raw_value)
+                    cap_match = _RE_INFO_CAPACITY_SECTORS.match(m.raw_value)
                     if cap_match:
                         try:
                             result.capacity_sectors = int(cap_match.group(1))

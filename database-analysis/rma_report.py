@@ -12,6 +12,7 @@ from typing import Optional
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from database import DatabaseConnection, MetricsRepository
 
@@ -193,7 +194,7 @@ class RMAReportGenerator:
 
         # 列宽自适应
         for col in range(1, len(headers) + 1):
-            ws.column_dimensions[chr(64 + col) if col <= 26 else "A" + chr(64 + col - 26)].width = 18
+            ws.column_dimensions[get_column_letter(col)].width = 18
 
     def _build_metrics_sheet(self, wb: Workbook, metrics: list[dict]) -> None:
         """构建 Sheet2：详细指标。
@@ -238,8 +239,7 @@ class RMAReportGenerator:
         # 列宽
         col_widths = [18, 30, 20, 10, 35, 25, 20, 20, 12, 10, 8]
         for col, width in enumerate(col_widths, 1):
-            col_letter = chr(64 + col) if col <= 26 else "A" + chr(64 + col - 26)
-            ws.column_dimensions[col_letter].width = width
+            ws.column_dimensions[get_column_letter(col)].width = width
 
     def _build_anomaly_sheet(self, wb: Workbook, fail_summaries: list[dict]) -> None:
         """构建 Sheet3：异常汇总。
@@ -286,5 +286,4 @@ class RMAReportGenerator:
         # 列宽
         col_widths = [8, 18, 30, 10, 25, 12, 12, 10, 20]
         for col, width in enumerate(col_widths, 1):
-            col_letter = chr(64 + col) if col <= 26 else "A" + chr(64 + col - 26)
-            ws.column_dimensions[col_letter].width = width
+            ws.column_dimensions[get_column_letter(col)].width = width
