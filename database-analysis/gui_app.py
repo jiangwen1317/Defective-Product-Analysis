@@ -10,6 +10,7 @@ import os
 import sqlite3
 import sys
 import threading
+from collections import defaultdict
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
@@ -178,8 +179,13 @@ class App(ctk.CTk):
             return
 
         def _run() -> None:
-            self._parse_service.process_files([file_path], on_log=self._log_parse)
-            self._update_status()
+            try:
+                self._parse_service.process_files([file_path], on_log=self._log_parse)
+            except Exception as exc:
+                self._log_parse(f"❌ 解析异常: {exc}")
+                logger.error("单文件解析异常: %s", exc, exc_info=True)
+            finally:
+                self._update_status()
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -192,17 +198,22 @@ class App(ctk.CTk):
             return
 
         def _run() -> None:
-            self._log_parse(f"开始处理目录: {directory}")
-            # 解压 ZIP
-            self._log_parse("正在解压 ZIP 文件...")
-            extract_all_zips(directory)
-            # 发现日志文件
-            extensions = get_file_extensions()
-            files = discover_log_files(directory, extensions)
-            self._log_parse(f"发现 {len(files)} 个日志文件")
-            # 解析
-            self._parse_service.process_files(files, on_log=self._log_parse)
-            self._update_status()
+            try:
+                self._log_parse(f"开始处理目录: {directory}")
+                # 解压 ZIP
+                self._log_parse("正在解压 ZIP 文件...")
+                extract_all_zips(directory)
+                # 发现日志文件
+                extensions = get_file_extensions()
+                files = discover_log_files(directory, extensions)
+                self._log_parse(f"发现 {len(files)} 个日志文件")
+                # 解析
+                self._parse_service.process_files(files, on_log=self._log_parse)
+            except Exception as exc:
+                self._log_parse(f"❌ 目录处理异常: {exc}")
+                logger.error("目录解析异常: %s", exc, exc_info=True)
+            finally:
+                self._update_status()
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -477,7 +488,23 @@ class App(ctk.CTk):
 
         repo = self._repo
         with self._db.connect() as conn:
+            # 先获取待删除记录的 file_path，用于清理 process_log
+            placeholders = ",".join("?" * len(id_list))
+            file_paths = [
+                row[0] for row in conn.execute(
+                    f"SELECT file_path FROM test_summary WHERE id IN ({placeholders})",
+                    id_list,
+                ).fetchall()
+            ]
+            # 删除主表（test_metrics 通过 ON DELETE CASCADE 自动级联删除）
             deleted = repo.delete_summaries_by_ids(conn, id_list)
+            # 清理关联的 process_log 记录（避免孤立数据积累）
+            if file_paths:
+                fp_placeholders = ",".join("?" * len(file_paths))
+                conn.execute(
+                    f"DELETE FROM process_log WHERE file_path IN ({fp_placeholders})",
+                    file_paths,
+                )
 
         messagebox.showinfo("完成", f"已删除 {deleted} 条记录及其全部关联指标")
 
@@ -616,16 +643,30 @@ class App(ctk.CTk):
 
         repo = self._repo
 
-        # 收集数据
+        # 收集数据（使用批量查询避免 N+1）
         records: list[dict] = []
         with self._db.connect() as conn:
             all_summaries = {s["id"]: s for s in repo.get_summaries(conn, limit=500)}
 
-            for sid in ids:
-                summary = all_summaries.get(sid)
-                if summary is None:
-                    continue
-                metrics = repo.get_metrics(conn, summary_id=sid, metric_key=metric_key)
+            # 过滤出有效的 summary IDs
+            valid_ids = [sid for sid in ids if sid in all_summaries]
+            if not valid_ids:
+                messagebox.showinfo("提示", f"未找到有效的记录 ID")
+                return
+
+            # 批量查询所有 ID 的指标（替代逐个查询）
+            all_metrics = repo.get_metrics_by_summary_ids(
+                conn, valid_ids, metric_key=metric_key,
+            )
+
+            # 按 summary_id 分组
+            metrics_by_sid: dict[int, list[dict]] = defaultdict(list)
+            for m in all_metrics:
+                metrics_by_sid[m["summary_id"]].append(m)
+
+            for sid in valid_ids:
+                summary = all_summaries[sid]
+                metrics = metrics_by_sid.get(sid, [])
 
                 indexed: list[tuple[int, float]] = []
                 scalar_val: float | None = None

@@ -591,3 +591,175 @@ class TestEndToEnd:
 
             device2 = repo.get_summaries(conn, device_name="DM3720.033.07")
             assert len(device2) == 1
+
+
+# ================================================================
+# 清空数据库与 process_log 清理
+# ================================================================
+
+class TestClearDatabase:
+    """测试 DROP + 重建清空数据库的正确性。"""
+
+    def test_drop_and_rebuild_clears_all_data(self, tmp_db):
+        """DROP 全部表后 init_database 重建，数据归零、schema 完整。"""
+        db, repo = tmp_db
+
+        # 预置数据
+        with db.connect() as conn:
+            sid = repo.insert_summary(
+                conn,
+                file_name="test.txt",
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+            )
+            repo.insert_metrics_batch(conn, sid, [
+                ("header", "WAI", "WAI", "100", 100.0, "float", None, None),
+            ])
+            repo.insert_process_log(
+                conn,
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+                action="parsed",
+                summary_id=sid,
+            )
+
+        # 模拟清空：DROP + 重建
+        with db.connect() as conn:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("DROP TABLE IF EXISTS process_log")
+            conn.execute("DROP TABLE IF EXISTS test_metrics")
+            conn.execute("DROP TABLE IF EXISTS test_summary")
+            conn.execute("DROP TABLE IF EXISTS _test_summary_old")
+            init_database(conn)
+            conn.execute("PRAGMA foreign_keys=ON")
+
+        # 验证数据已清空
+        with db.connect() as conn:
+            assert len(repo.get_summaries(conn)) == 0
+            assert len(repo.get_all_process_logs(conn)) == 0
+
+        # 验证 schema 完整（可正常写入）
+        with db.connect() as conn:
+            new_sid = repo.insert_summary(
+                conn,
+                file_name="new.txt",
+                file_path="/tmp/new.txt",
+                file_size=200,
+                file_mtime=2000.0,
+                device_name="DM3720",
+            )
+            assert new_sid is not None
+            assert new_sid >= 1  # ID 从 1 重新开始
+
+    def test_drop_and_rebuild_fixes_corrupted_fk(self, tmp_db):
+        """DROP + 重建可修复外键引用损坏（模拟迁移中断场景）。"""
+        db, repo = tmp_db
+
+        # 模拟损坏状态：创建 _test_summary_old 临时表
+        with db.connect() as conn:
+            conn.execute(
+                "CREATE TABLE _test_summary_old (id INTEGER PRIMARY KEY)"
+            )
+
+        # DROP + 重建应清除残留表并恢复正常
+        with db.connect() as conn:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("DROP TABLE IF EXISTS process_log")
+            conn.execute("DROP TABLE IF EXISTS test_metrics")
+            conn.execute("DROP TABLE IF EXISTS test_summary")
+            conn.execute("DROP TABLE IF EXISTS _test_summary_old")
+            init_database(conn)
+            conn.execute("PRAGMA foreign_keys=ON")
+
+        # 验证可正常读写（之前损坏的 FK 引用已修复）
+        with db.connect() as conn:
+            sid = repo.insert_summary(
+                conn,
+                file_name="test.txt",
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+            )
+            repo.insert_process_log(
+                conn,
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+                action="parsed",
+                summary_id=sid,
+            )
+            logs = repo.get_all_process_logs(conn)
+            assert len(logs) == 1
+
+
+class TestProcessLogCleanup:
+    """测试删除记录时 process_log 的清理。"""
+
+    def test_delete_summary_leaves_orphan_process_log(self, tmp_db):
+        """验证仅删除 summary 时 process_log 记录变为 NULL（ON DELETE SET NULL）。"""
+        db, repo = tmp_db
+        with db.connect() as conn:
+            sid = repo.insert_summary(
+                conn,
+                file_name="test.txt",
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+            )
+            repo.insert_process_log(
+                conn,
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+                action="parsed",
+                summary_id=sid,
+            )
+
+        with db.connect() as conn:
+            repo.delete_summaries_by_ids(conn, [sid])
+
+        # process_log 记录仍存在，但 summary_id 为 NULL
+        with db.connect() as conn:
+            logs = repo.get_all_process_logs(conn)
+            assert len(logs) == 1
+            assert logs[0]["summary_id"] is None
+
+    def test_explicit_process_log_cleanup(self, tmp_db):
+        """显式删除 process_log 后数据完全清理。"""
+        db, repo = tmp_db
+        with db.connect() as conn:
+            sid = repo.insert_summary(
+                conn,
+                file_name="test.txt",
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+            )
+            repo.insert_process_log(
+                conn,
+                file_path="/tmp/test.txt",
+                file_size=100,
+                file_mtime=1000.0,
+                action="parsed",
+                summary_id=sid,
+            )
+
+        with db.connect() as conn:
+            # 先获取 file_path
+            file_paths = [
+                row[0] for row in conn.execute(
+                    "SELECT file_path FROM test_summary WHERE id = ?", (sid,)
+                ).fetchall()
+            ]
+            repo.delete_summaries_by_ids(conn, [sid])
+            # 显式清理 process_log
+            conn.execute(
+                "DELETE FROM process_log WHERE file_path IN (?)",
+                file_paths,
+            )
+
+        with db.connect() as conn:
+            assert len(repo.get_summaries(conn)) == 0
+            assert len(repo.get_all_process_logs(conn)) == 0
