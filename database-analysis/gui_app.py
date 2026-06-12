@@ -7,6 +7,7 @@ EMMC 测试日志解析与分析系统 - GUI 界面
 import json
 import logging
 import os
+import sqlite3
 import sys
 import threading
 from datetime import datetime
@@ -206,13 +207,30 @@ class App(ctk.CTk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _clear_database(self) -> None:
+        """清空数据库所有数据并回收磁盘空间。
+
+        通过 DROP + 重建表的方式彻底清除，同时修复可能因迁移中断
+        导致的外键引用损坏（如 process_log FK 指向 _test_summary_old）。
+        """
         if not messagebox.askyesno("确认", "确定要清空数据库中所有数据吗？此操作不可撤销！"):
             return
         with self._db.connect() as conn:
-            # 清理可能残留的迁移临时表
+            # 禁用外键检查，避免 DROP 顺序依赖问题
+            conn.execute("PRAGMA foreign_keys=OFF")
+            # 删除所有业务表和可能残留的迁移临时表
+            conn.execute("DROP TABLE IF EXISTS process_log")
+            conn.execute("DROP TABLE IF EXISTS test_metrics")
+            conn.execute("DROP TABLE IF EXISTS test_summary")
             conn.execute("DROP TABLE IF EXISTS _test_summary_old")
-            # 删除主表，子表通过 ON DELETE CASCADE 自动级联删除
-            conn.execute("DELETE FROM test_summary")
+            # 重建表结构（init_database 使用 IF NOT EXISTS，安全幂等）
+            init_database(conn)
+            conn.execute("PRAGMA foreign_keys=ON")
+        # VACUUM 必须在事务外执行，回收已删除数据的磁盘空间
+        raw_conn = sqlite3.connect(self._db_path)
+        try:
+            raw_conn.execute("VACUUM")
+        finally:
+            raw_conn.close()
         self._log_parse("数据库已清空")
         self._update_status()
 
