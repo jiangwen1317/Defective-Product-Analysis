@@ -209,9 +209,9 @@ class App(ctk.CTk):
         if not messagebox.askyesno("确认", "确定要清空数据库中所有数据吗？此操作不可撤销！"):
             return
         with self._db.connect() as conn:
-            # 按依赖关系逆序删除：先删子表，最后删主表
-            conn.execute("DELETE FROM process_log")
-            conn.execute("DELETE FROM test_metrics")
+            # 清理可能残留的迁移临时表
+            conn.execute("DROP TABLE IF EXISTS _test_summary_old")
+            # 删除主表，子表通过 ON DELETE CASCADE 自动级联删除
             conn.execute("DELETE FROM test_summary")
         self._log_parse("数据库已清空")
         self._update_status()
