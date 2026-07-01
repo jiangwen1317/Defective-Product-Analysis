@@ -23,7 +23,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from PyQt5.QtCore import QEvent, QMetaObject, Qt, QTimer, pyqtSlot
+from PyQt5.QtCore import QEvent, Qt, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -671,6 +671,7 @@ class MainWindow(QMainWindow):
         debug_layout.addWidget(inject_btn)
 
         # 调试工具仅在调试模式下显示
+        print(f"[DEBUG] enable_debug = {self._gateway_config.enable_debug}")  # 调试输出
         self._debug_card.setVisible(self._gateway_config.enable_debug)
 
         layout.addWidget(self._debug_card)
@@ -816,15 +817,15 @@ class MainWindow(QMainWindow):
         self._log("调试", f"已注入测试信号 - Group: {group}, Bitmask: {bitmask}")
 
     def _on_gateway_state_changed(self, state: GatewayState) -> None:
-        """网关状态变化回调。"""
-        QMetaObject.invokeMethod(
-            self, "_update_flow_display", Qt.QueuedConnection, int(state.value)
-        )
+        """网关状态变化回调（线程安全）。"""
+        QTimer.singleShot(0, lambda s=state: self._update_flow_display_safe(s))
 
-    @pyqtSlot(int)
-    def _update_flow_display(self, state_value: int) -> None:
-        """更新流程显示。"""
-        state = GatewayState(state_value)
+    def _update_flow_display_safe(self, state: GatewayState) -> None:
+        """更新流程显示（主线程安全）。"""
+        # 检查控件是否已初始化
+        if not hasattr(self, '_flow_icons') or not self._flow_icons:
+            logger.warning("流程图控件未初始化，跳过状态更新")
+            return
 
         # 更新所有节点
         for s, icon_label in self._flow_icons.items():
@@ -864,14 +865,16 @@ class MainWindow(QMainWindow):
                 """)
 
     def _on_arm_connected(self, connected: bool) -> None:
-        """机械臂连接状态变化回调。"""
-        QMetaObject.invokeMethod(
-            self, "_update_arm_display", Qt.QueuedConnection, connected
-        )
+        """机械臂连接状态变化回调（线程安全）。"""
+        QTimer.singleShot(0, lambda c=connected: self._update_arm_display_safe(c))
 
-    @pyqtSlot(bool)
-    def _update_arm_display(self, connected: bool) -> None:
-        """更新机械臂显示。"""
+    def _update_arm_display_safe(self, connected: bool) -> None:
+        """更新机械臂显示（主线程安全）。"""
+        # 检查控件是否已初始化
+        if not hasattr(self, '_arm_connection') or self._arm_connection is None:
+            logger.warning("机械臂显示控件未初始化，跳过状态更新")
+            return
+
         if connected:
             self._arm_connection.set_status("online")
             if self._gateway and self._gateway.arm_client_address:
@@ -882,15 +885,19 @@ class MainWindow(QMainWindow):
             self._log("连接", "机械臂已断开")
 
     def _on_3720_status_changed(self, status: TC3720Status) -> None:
-        """3720 状态变化回调。"""
-        QMetaObject.invokeMethod(
-            self, "_update_3720_display", Qt.QueuedConnection, status.value
-        )
+        """3720 状态变化回调（线程安全）。
 
-    @pyqtSlot(str)
-    def _update_3720_display(self, status_value: str) -> None:
-        """更新 3720 显示。"""
-        status = TC3720Status(status_value)
+        使用 QTimer.singleShot 将 UI 更新调度到主线程。
+        """
+        # 通过 QTimer.singleShot(0, ...) 确保在主线程执行
+        QTimer.singleShot(0, lambda s=status: self._update_3720_display_safe(s))
+
+    def _update_3720_display_safe(self, status: TC3720Status) -> None:
+        """更新 3720 显示（主线程安全）。"""
+        # 检查控件是否已初始化
+        if not hasattr(self, '_tc3720_connection') or self._tc3720_connection is None:
+            logger.warning("3720 显示控件未初始化，跳过状态更新")
+            return
 
         status_map = {
             TC3720Status.OFFLINE: "offline",
@@ -904,70 +911,47 @@ class MainWindow(QMainWindow):
     def _on_transfer_record(self, record: TransferRecord) -> None:
         """中转记录回调（线程安全）。
 
-        所有 UI 操作通过 QMetaObject.invokeMethod 传递到主线程。
+        使用 QTimer.singleShot 确保 UI 更新在主线程执行。
         """
-        # 将数据打包，通过 invokeMethod 传递到主线程
-        QMetaObject.invokeMethod(
-            self,
-            "_update_transfer_display",
-            Qt.QueuedConnection,
-            int(record.state.value),
-            record.group,
-            record.bitmask,
-            ",".join(record.error_codes) if record.error_codes else "",
-            record.error_code.value,
-            record.error_message,
-            record.duration_ms,
-        )
+        # 将 record 对象传递给主线程
+        QTimer.singleShot(0, lambda r=record: self._update_transfer_display_safe(r))
 
-    @pyqtSlot(int, str, str, str, str, str, int)
-    def _update_transfer_display(
-        self,
-        state_value: int,
-        group: str,
-        bitmask: str,
-        error_codes_str: str,
-        error_code_value: str,
-        error_message: str,
-        duration_ms: int,
-    ) -> None:
+    def _update_transfer_display_safe(self, record: TransferRecord) -> None:
         """更新传输显示（主线程安全）。
 
         Args:
-            state_value: 网关状态值
-            group: 组号
-            bitmask: 位掩码
-            error_codes_str: 错误码列表（逗号分隔）
-            error_code_value: 错误码值
-            error_message: 错误消息
-            duration_ms: 处理耗时（毫秒）
+            record: 中转记录
         """
-        state = GatewayState(state_value)
-        error_codes = error_codes_str.split(",") if error_codes_str else []
+        # 检查控件是否已初始化
+        if not hasattr(self, '_task_group_label') or self._task_group_label is None:
+            logger.warning("任务显示控件未初始化，跳过传输更新")
+            return
+
+        error_codes = record.error_codes or []
 
         # 更新统计数据
         self._stats["total"] += 1
 
-        if state == GatewayState.AUTO_REPLY:
+        if record.state == GatewayState.AUTO_REPLY:
             self._stats["success"] += 1
 
             # 更新任务显示
-            self._task_group_label.setText(group)
-            self._task_bitmask_label.setText(bitmask)
+            self._task_group_label.setText(record.group)
+            self._task_bitmask_label.setText(record.bitmask)
             self._task_errorcodes_label.setText(", ".join(error_codes) if error_codes else "-")
-            self._task_duration_label.setText(f"{duration_ms}ms")
+            self._task_duration_label.setText(f"{record.duration_ms}ms")
 
             self._log(
                 "完成",
-                f"中转完成 - Group: {group}, "
-                f"Bitmask: {bitmask}, "
+                f"中转完成 - Group: {record.group}, "
+                f"Bitmask: {record.bitmask}, "
                 f"ErrorCodes: [{', '.join(error_codes) if error_codes else 'None'}], "
-                f"耗时: {duration_ms}ms",
+                f"耗时: {record.duration_ms}ms",
             )
-        elif state == GatewayState.ERROR:
+        elif record.state == GatewayState.ERROR:
             self._stats["failed"] += 1
 
-            self._log("异常", f"中转异常 - {error_code_value}: {error_message}")
+            self._log("异常", f"中转异常 - {record.error_code.value}: {record.error_message}")
 
         # 更新统计显示
         self._update_stats_display()
@@ -986,23 +970,19 @@ class MainWindow(QMainWindow):
 
     def _on_gateway_error(self, error_code: ErrorCode, message: str) -> None:
         """网关错误回调（线程安全）。"""
-        QMetaObject.invokeMethod(
-            self,
-            "_update_error_display",
-            Qt.QueuedConnection,
-            error_code.value,
-            message,
-        )
+        QTimer.singleShot(0, lambda e=error_code, m=message: self._update_error_display_safe(e, m))
 
-    @pyqtSlot(str, str)
-    def _update_error_display(self, error_code_value: str, message: str) -> None:
+    def _update_error_display_safe(self, error_code: ErrorCode, message: str) -> None:
         """更新错误显示（主线程安全）。
 
         Args:
-            error_code_value: 错误码值
+            error_code: 错误码
             message: 错误消息
         """
-        error_code = ErrorCode(error_code_value)
+        # 检查控件是否已初始化
+        if not hasattr(self, '_alarm_card') or self._alarm_card is None:
+            logger.warning("告警显示控件未初始化，跳过错误更新")
+            return
 
         # 显示告警
         self._alarm_card.setVisible(True)
