@@ -63,6 +63,10 @@ class GatewayConfig:
 
     arm_host: str = "0.0.0.0"
     arm_port: int = 8080
+    arm_mode: str = "tcp_server"  # tcp_server | tcp_client
+    arm_target_host: str = ""  # Client 模式目标地址
+    arm_target_port: int = 0  # Client 模式目标端口
+    arm_reconnect_interval: float = 5.0  # Client 模式重连间隔（秒）
     tc3720_mode: str = "simulator"
     tc3720_host: str = "192.168.1.101"
     tc3720_port: int = 9090
@@ -221,6 +225,10 @@ class SignalGateway:
         self._arm_adapter = ArmAdapter(
             host=self._config.arm_host,
             port=self._config.arm_port,
+            mode=self._config.arm_mode,
+            target_host=self._config.arm_target_host,
+            target_port=self._config.arm_target_port,
+            reconnect_interval=self._config.arm_reconnect_interval,
             on_connected=self._on_arm_connected_callback,
             on_disconnected=self._on_arm_disconnected_callback,
             on_start_test=self._on_start_test_received,

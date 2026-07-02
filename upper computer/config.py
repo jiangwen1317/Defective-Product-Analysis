@@ -24,6 +24,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "gateway": {
         "arm_host": "0.0.0.0",
         "arm_port": 8080,
+        "arm_mode": "tcp_server",  # tcp_server | tcp_client
+        "arm_target_host": "",  # Client 模式目标地址
+        "arm_target_port": 0,  # Client 模式目标端口
+        "arm_reconnect_interval": 5.0,  # Client 模式重连间隔（秒）
         "tc3720_mode": "simulator",
         "tc3720_host": "192.168.1.101",
         "tc3720_port": 9090,
@@ -146,6 +150,10 @@ def get_gateway_config(config: dict[str, Any] | None = None) -> GatewayConfig:
     return GatewayConfig(
         arm_host=gw.get("arm_host", "0.0.0.0"),
         arm_port=arm_port,
+        arm_mode=gw.get("arm_mode", "tcp_server"),
+        arm_target_host=gw.get("arm_target_host", ""),
+        arm_target_port=gw.get("arm_target_port", 0),
+        arm_reconnect_interval=float(gw.get("arm_reconnect_interval", 5.0)),
         tc3720_mode=gw.get("tc3720_mode", "simulator"),
         tc3720_host=gw.get("tc3720_host", "192.168.1.101"),
         tc3720_port=tc3720_port,
