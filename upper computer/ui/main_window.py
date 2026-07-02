@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
 
     def _init_ui(self) -> None:
         """初始化界面布局。"""
-        self.setWindowTitle("机械臂中转网关 v3.0")
+        self.setWindowTitle("机械臂中转网关 v1.0")
         self.setGeometry(
             100, 100,
             self._ui_config.get("window_width", 1400),
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # 版本信息
-        version_label = QLabel("v3.0 | threading 架构")
+        version_label = QLabel("v1.0 | threading 架构")
         version_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
         layout.addWidget(version_label)
 
