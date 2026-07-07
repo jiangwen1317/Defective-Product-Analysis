@@ -376,6 +376,56 @@ class TC3720TcpAdapter:
 
         return True
 
+    def trigger_test(self, timeout: float = 30.0) -> bool:
+        """向 3720 发送启动信号（协议规定的 "START" 命令）。
+
+        设置 _pending_test = True，确保收到 ErrorCode 响应时能正确处理。
+
+        Args:
+            timeout: 测试超时时间（秒）。
+
+        Returns:
+            启动是否成功。
+        """
+        with self._lock:
+            if not self._running:
+                logger.error("3720 未连接，无法发送启动信号")
+                return False
+
+            if self._status == TC3720Status.TESTING:
+                logger.warning("3720 正在测试中，忽略重复请求")
+                return False
+
+        # 发送 START 信号（协议规定的 5 个大写字母）
+        command = "START"
+
+        logger.info("向 3720 发送启动信号: %r", command)
+
+        # 保存待处理测试信息
+        with self._lock:
+            self._pending_test = True
+            self._pending_timeout = timeout
+
+        # 发送指令
+        if not self._send_command(command):
+            with self._lock:
+                self._pending_test = False
+            logger.error("发送启动信号失败")
+            return False
+
+        # 更新状态
+        self._set_status(TC3720Status.TESTING)
+
+        # 启动超时监控
+        threading.Thread(
+            target=self._timeout_monitor,
+            args=(timeout,),
+            name="TC3720-Timeout",
+            daemon=True,
+        ).start()
+
+        return True
+
     def _send_command(self, command: str) -> bool:
         """发送指令。
 
@@ -523,14 +573,25 @@ class TC3720TcpAdapter:
     def _parse_response(self, line: str) -> None:
         """解析 3720 响应。
 
+        支持的响应格式：
+        - ErrorCode: XXXX (单错误码，4位十六进制)
+        - RESULT <ec1> <ec2> ... <ec8> (多错误码)
+        - OK / ACK (确认响应)
+        - ERROR <message> (错误响应)
+
         Args:
             line: 响应行。
         """
-        parts = line.split()
-
-        if not parts:
+        line = line.strip()
+        if not line:
             return
 
+        # 检查 ErrorCode: XXXX 格式
+        if line.upper().startswith("ERRORCODE:"):
+            self._parse_error_code_response(line)
+            return
+
+        parts = line.split()
         cmd = parts[0].upper()
 
         if cmd == "RESULT" or cmd == "TEST_DONE":
@@ -539,6 +600,8 @@ class TC3720TcpAdapter:
             if len(parts) >= 9:
                 error_codes = parts[1:9]
                 self._handle_test_result(error_codes)
+            else:
+                logger.warning("3720 RESULT 响应参数不足")
 
         elif cmd == "OK" or cmd == "ACK":
             # 确认响应
@@ -557,6 +620,41 @@ class TC3720TcpAdapter:
         else:
             # 未知响应
             logger.warning("3720 未知响应: %s", line)
+
+    def _parse_error_code_response(self, line: str) -> None:
+        """解析 ErrorCode: XXXX 格式的响应。
+
+        Args:
+            line: 响应行，格式为 "ErrorCode: XXXX"。
+        """
+        import re
+
+        # 匹配 "ErrorCode: XXXX" 格式
+        match = re.match(r"^ErrorCode:\s*([0-9A-Fa-f]{4})$", line, re.IGNORECASE)
+        if not match:
+            logger.warning("无法解析 ErrorCode 响应格式: %s", line)
+            return
+
+        error_code = match.group(1).upper()
+        logger.info("3720 收到错误码: %s", error_code)
+
+        # 检查是否有待处理的测试
+        with self._lock:
+            if not self._pending_test:
+                logger.warning("收到错误码但没有待处理的测试: %s", error_code)
+                return
+
+        # 构造成单错误码列表
+        error_codes = [error_code]
+
+        # 更新状态并触发回调
+        with self._lock:
+            self._pending_test = False
+
+        self._set_status(TC3720Status.IDLE)
+
+        if self._on_test_complete:
+            self._on_test_complete(error_codes)
 
     def _handle_test_result(self, error_codes: list[str]) -> None:
         """处理测试结果。

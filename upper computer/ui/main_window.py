@@ -284,7 +284,7 @@ class MainWindow(QMainWindow):
         cfg = self._gateway_config
         config_items = [
             ("监听地址", f"{cfg.arm_host}:{cfg.arm_port}"),
-            ("测试模式", cfg.tc3720_mode.upper()),
+            ("测试设备", "8 DUTs"),
             ("超时设置", f"{cfg.test_timeout}s"),
         ]
 
@@ -597,6 +597,45 @@ class MainWindow(QMainWindow):
         debug_layout = self._debug_card.content_layout()
         debug_layout.setSpacing(SPACING_SM)
 
+        # 主动触发测试区域
+        trigger_label = QLabel("主动测试模式")
+        trigger_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+        debug_layout.addWidget(trigger_label)
+
+        trigger_desc = QLabel("发送 @TEST_DONE 触发机械臂开始测试流程")
+        trigger_desc.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
+        debug_layout.addWidget(trigger_desc)
+
+        # 触发测试按钮
+        trigger_btn = QPushButton("▶ 主动触发测试")
+        trigger_btn.setFixedHeight(36)
+        trigger_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_SUCCESS};
+                color: white;
+                border: none;
+                border-radius: {RADIUS_SM};
+                font-size: {FONT_SIZE_SM};
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #16a34a;
+            }}
+        """)
+        trigger_btn.clicked.connect(self._on_trigger_test)
+        debug_layout.addWidget(trigger_btn)
+
+        # 分隔线
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"background-color: {COLOR_BORDER}; max-height: 1px;")
+        debug_layout.addWidget(sep)
+
+        # 手动注入区域
+        inject_label = QLabel("手动模拟模式")
+        inject_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+        debug_layout.addWidget(inject_label)
+
         # Group 输入
         group_row = QHBoxLayout()
         group_row.setSpacing(SPACING_SM)
@@ -626,8 +665,9 @@ class MainWindow(QMainWindow):
         group_row.addWidget(bitmask_label)
 
         self._debug_bitmask_input = QLineEdit()
-        self._debug_bitmask_input.setPlaceholderText("11111111")
+        self._debug_bitmask_input.setPlaceholderText("11000000")
         self._debug_bitmask_input.setFixedWidth(80)
+        self._debug_bitmask_input.setText("11000000")  # 默认测试前两个 DUT
         self._debug_bitmask_input.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {COLOR_BG_TERTIARY};
@@ -646,7 +686,7 @@ class MainWindow(QMainWindow):
         debug_layout.addLayout(group_row)
 
         # 注入按钮
-        inject_btn = QPushButton("⚡ 注入测试信号")
+        inject_btn = QPushButton("⚡ 模拟 START_TEST")
         inject_btn.setFixedHeight(32)
         inject_btn.setStyleSheet(f"""
             QPushButton {{
@@ -794,6 +834,28 @@ class MainWindow(QMainWindow):
         self._alarm_card.setVisible(False)
         self._clear_alarm_btn.setVisible(False)
         self._log("系统", "告警已清除")
+
+    def _on_trigger_test(self) -> None:
+        """主动触发测试（发送 @TEST_DONE 命令）。"""
+        if self._gateway is None:
+            self._log("错误", "网关未初始化")
+            return
+
+        if not self._gateway.is_running:
+            self._log("错误", "网关未启动，无法触发测试")
+            return
+
+        if not self._gateway.is_arm_connected:
+            self._log("错误", "机械臂未连接，无法触发测试")
+            return
+
+        # 发送触发命令
+        success = self._gateway.trigger_test()
+
+        if success:
+            self._log("触发", "已发送 @TEST_DONE 触发命令，等待机械臂响应...")
+        else:
+            self._log("错误", "发送触发命令失败")
 
     def _on_inject_test_signal(self) -> None:
         """注入测试信号（调试用）。"""

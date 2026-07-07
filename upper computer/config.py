@@ -20,6 +20,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_PATH = os.path.join(_SCRIPT_DIR, "config.json")
 
 # 默认配置
+# 注意：实际 IP 配置请修改 config.json，本文件仅作为默认值参考
 DEFAULT_CONFIG: dict[str, Any] = {
     "gateway": {
         # 机械臂通信模式: tcp_server | tcp_client | serial
@@ -38,16 +39,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "arm_serial_bytesize": 8,  # 数据位: 5, 6, 7, 8
         "arm_serial_stopbits": 1,  # 停止位: 1, 1.5, 2
         "arm_serial_parity": "N",  # 校验位: N(None), E(Even), O(Odd)
-        # 3720 配置
-        "tc3720_mode": "simulator",
-        "tc3720_host": "192.168.1.101",
-        "tc3720_port": 9090,
+        # 测试超时
         "test_timeout": 30.0,
-        "enable_debug": False,
+        "enable_debug": True,  # 开发环境建议开启
+    },
+    # 多设备配置：DUT #1-8 对应的 3720 测试仪 IP
+    # 实际 IP 请在 config.json 中配置
+    # Bitmask 中哪一位为 1，就使用对应 DUT 的 IP
+    # 例如：Bitmask=11000000 表示测试 DUT #1 和 #2
+    "devices": {
+        "dut1": {"ip": "", "port": 9090, "name": "Board-1"},  # TODO: 配置实际 IP
+        "dut2": {"ip": "", "port": 9090, "name": "Board-2"},
+        "dut3": {"ip": "", "port": 9090, "name": "Board-3"},
+        "dut4": {"ip": "", "port": 9090, "name": "Board-4"},
+        "dut5": {"ip": "", "port": 9090, "name": "Board-5"},
+        "dut6": {"ip": "", "port": 9090, "name": "Board-6"},
+        "dut7": {"ip": "", "port": 9090, "name": "Board-7"},
+        "dut8": {"ip": "", "port": 9090, "name": "Board-8"},
     },
     "ui": {
-        "window_width": 1000,
-        "window_height": 700,
+        "window_width": 1200,
+        "window_height": 800,
         "log_max_lines": 5000,
         "theme": "dark",
     },
@@ -148,15 +160,15 @@ def get_gateway_config(config: dict[str, Any] | None = None) -> GatewayConfig:
 
     # 类型验证
     arm_port = gw.get("arm_port", 8080)
-    tc3720_port = gw.get("tc3720_port", 9090)
     test_timeout = gw.get("test_timeout", 30.0)
 
     if not isinstance(arm_port, int) or not (1 <= arm_port <= 65535):
         raise ValueError(f"arm_port 必须是 1-65535 之间的整数，当前值: {arm_port!r}")
-    if not isinstance(tc3720_port, int) or not (1 <= tc3720_port <= 65535):
-        raise ValueError(f"tc3720_port 必须是 1-65535 之间的整数，当前值: {tc3720_port!r}")
     if not isinstance(test_timeout, (int, float)) or test_timeout <= 0:
         raise ValueError(f"test_timeout 必须是正数，当前值: {test_timeout!r}")
+
+    # 获取多设备配置
+    devices_config = config.get("devices", DEFAULT_CONFIG.get("devices", {}))
 
     return GatewayConfig(
         arm_mode=gw.get("arm_mode", "tcp_server"),
@@ -171,12 +183,11 @@ def get_gateway_config(config: dict[str, Any] | None = None) -> GatewayConfig:
         arm_serial_bytesize=int(gw.get("arm_serial_bytesize", 8)),
         arm_serial_stopbits=int(gw.get("arm_serial_stopbits", 1)),
         arm_serial_parity=str(gw.get("arm_serial_parity", "N")),
-        # 3720 配置
-        tc3720_mode=gw.get("tc3720_mode", "simulator"),
-        tc3720_host=gw.get("tc3720_host", "192.168.1.101"),
-        tc3720_port=tc3720_port,
+        # 测试配置
         test_timeout=float(test_timeout),
         enable_debug=bool(gw.get("enable_debug", False)),
+        # 多设备配置
+        devices_config=devices_config,
     )
 
 

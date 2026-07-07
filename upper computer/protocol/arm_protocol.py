@@ -16,6 +16,12 @@ class ArmProtocol:
     """机械臂通讯协议处理器。
 
     负责指令的构建、验证与解析。
+
+    通信流程（主动模式）：
+    1. 上位机发送 @TEST_DONE 触发机械臂开始测试
+    2. 机械臂收到后，发送 @START_TEST 00 <bitmask>+ 启动测试
+    3. 3720 测试完成后返回 ErrorCode: XXXX
+    4. 上位机组装 @TEST_DONE 返回给机械臂
     """
 
     # 指令标识
@@ -114,7 +120,7 @@ class ArmProtocol:
         """解析接收到的指令字符串。
 
         Args:
-            raw: 原始指令字符串（可能包含首尾空白字符）。
+            raw: 原始指令字符串（可能包含首尾空白字符和换行符）。
 
         Returns:
             解析成功的指令类型（如 'START_TEST'、'TEST_DONE'），
@@ -127,6 +133,12 @@ class ArmProtocol:
             >>> result[1]
             {'group': '00', 'bitmask': '11111111'}
         """
+        if not raw:
+            return None
+
+        # 去除首尾空白字符（包括 \r, \n, 空格等）
+        raw = raw.strip()
+
         if not raw:
             return None
 
@@ -150,9 +162,8 @@ class ArmProtocol:
             logger.warning("指令格式错误：结束符 '+' 前不能是空格")
             return None
 
-        # 去除首尾空白后提取内容
-        raw_stripped = raw.strip()
-        content = raw_stripped[1:-1]
+        # 去除首尾标识后提取内容
+        content = raw[1:-1]
 
         # 分割指令类型和参数（使用单个空格分隔）
         parts = content.split(" ")
@@ -289,3 +300,45 @@ class ArmProtocol:
             raise ValueError(f"DUT 编号必须在 1-8 范围内，非法值: {invalid_duts}")
 
         return "".join("1" if i in duts else "0" for i in range(1, 9))
+
+    @classmethod
+    def build_trigger(cls) -> str:
+        """构建触发命令。
+
+        上位机发送此命令触发机械臂开始测试流程。
+        机械臂收到后会发送 @START_TEST 指令。
+
+        Returns:
+            触发命令字符串: @TEST_DONE+
+        """
+        return f"{cls.CMD_DONE}{cls.CMD_TERMINATOR}"
+
+    @classmethod
+    def parse_error_code_response(cls, raw: str) -> str | None:
+        """解析 3720 返回的错误码响应。
+
+        3720 返回格式: ErrorCode: XXXX
+
+        Args:
+            raw: 原始响应字符串。
+
+        Returns:
+            4位十六进制错误码，解析失败返回 None。
+        """
+        if not raw:
+            return None
+
+        # 去除首尾空白
+        raw = raw.strip()
+
+        # 匹配 "ErrorCode: XXXX" 格式
+        match = re.match(r"^ErrorCode:\s*([0-9A-Fa-f]{4})$", raw, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+
+        # 尝试直接匹配 4 位十六进制
+        if re.fullmatch(r"^[0-9A-Fa-f]{4}$", raw):
+            return raw.upper()
+
+        logger.warning("无法解析 3720 错误码响应: %r", raw)
+        return None
