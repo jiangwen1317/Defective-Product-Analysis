@@ -46,3 +46,10 @@ Thumbs.db
 # 文档（可选）
 CLAUDE.md
 IDENTITY.md
+
+# Claude Code 个人配置
+.claude/settings.json
+
+# 数据分析 - Excel 报告（不提交）
+database-analysis/rma_report.xlsx
+database-analysis/*.xlsx
