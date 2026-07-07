@@ -76,13 +76,10 @@ from ui.styles import (
 
 logger = logging.getLogger(__name__)
 
-# 状态配置
+# 状态配置（透传模式）
 STATE_CONFIG = {
     GatewayState.IDLE: {"text": "空闲", "color": COLOR_IDLE, "icon": "○"},
-    GatewayState.RECEIVED_START: {"text": "收到请求", "color": COLOR_INFO, "icon": "◉"},
-    GatewayState.FORWARDED_3720: {"text": "转发中", "color": COLOR_WARNING, "icon": "◉"},
-    GatewayState.WAITING_RESULT: {"text": "等待结果", "color": COLOR_PROCESSING, "icon": "◉"},
-    GatewayState.AUTO_REPLY: {"text": "回传完成", "color": COLOR_SUCCESS, "icon": "●"},
+    GatewayState.FORWARDING: {"text": "透传中", "color": COLOR_INFO, "icon": "◉"},
     GatewayState.ERROR: {"text": "异常", "color": COLOR_ERROR, "icon": "●"},
 }
 
@@ -442,13 +439,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACING_SM)
 
-        # 状态节点
+        # 状态节点（透传模式）
         states = [
             GatewayState.IDLE,
-            GatewayState.RECEIVED_START,
-            GatewayState.FORWARDED_3720,
-            GatewayState.WAITING_RESULT,
-            GatewayState.AUTO_REPLY,
+            GatewayState.FORWARDING,
         ]
 
         self._flow_nodes: dict[GatewayState, QWidget] = {}
@@ -671,7 +665,6 @@ class MainWindow(QMainWindow):
         debug_layout.addWidget(inject_btn)
 
         # 调试工具仅在调试模式下显示
-        print(f"[DEBUG] enable_debug = {self._gateway_config.enable_debug}")  # 调试输出
         self._debug_card.setVisible(self._gateway_config.enable_debug)
 
         layout.addWidget(self._debug_card)
@@ -708,7 +701,14 @@ class MainWindow(QMainWindow):
         if self._gateway is None or self._gateway.is_running:
             return
 
-        if self._gateway.start():
+        try:
+            result = self._gateway.start()
+        except Exception as e:
+            import traceback
+            self._log("错误", f"启动异常: {e}\n{traceback.format_exc()}")
+            return
+
+        if result:
             # 更新按钮
             self._service_btn.setText("停止服务")
             self._service_btn.setStyleSheet(f"""
@@ -927,30 +927,25 @@ class MainWindow(QMainWindow):
             logger.warning("任务显示控件未初始化，跳过传输更新")
             return
 
-        error_codes = record.error_codes or []
-
         # 更新统计数据
         self._stats["total"] += 1
 
-        if record.state == GatewayState.AUTO_REPLY:
-            self._stats["success"] += 1
-
-            # 更新任务显示
-            self._task_group_label.setText(record.group)
-            self._task_bitmask_label.setText(record.bitmask)
-            self._task_errorcodes_label.setText(", ".join(error_codes) if error_codes else "-")
-            self._task_duration_label.setText(f"{record.duration_ms}ms")
-
+        # 根据方向显示日志
+        if record.direction == "arm_to_3720":
             self._log(
-                "完成",
-                f"中转完成 - Group: {record.group}, "
-                f"Bitmask: {record.bitmask}, "
-                f"ErrorCodes: [{', '.join(error_codes) if error_codes else 'None'}], "
-                f"耗时: {record.duration_ms}ms",
+                "发送",
+                f"透传 → 3720 [{record.size} 字节]: {record.raw_data!r}",
             )
-        elif record.state == GatewayState.ERROR:
-            self._stats["failed"] += 1
+        elif record.direction == "3720_to_arm":
+            self._log(
+                "接收",
+                f"透传 ← 3720 [{record.size} 字节]: {record.raw_data!r}",
+            )
+        else:
+            self._log("记录", f"[{record.size} 字节]: {record.raw_data!r}")
 
+        if record.error_code != ErrorCode.NONE:
+            self._stats["failed"] += 1
             self._log("异常", f"中转异常 - {record.error_code.value}: {record.error_message}")
 
         # 更新统计显示

@@ -22,12 +22,23 @@ DEFAULT_CONFIG_PATH = os.path.join(_SCRIPT_DIR, "config.json")
 # 默认配置
 DEFAULT_CONFIG: dict[str, Any] = {
     "gateway": {
+        # 机械臂通信模式: tcp_server | tcp_client | serial
+        "arm_mode": "tcp_server",
+        # TCP Server 模式
         "arm_host": "0.0.0.0",
         "arm_port": 8080,
-        "arm_mode": "tcp_server",  # tcp_server | tcp_client
+        # TCP Client 模式
         "arm_target_host": "",  # Client 模式目标地址
         "arm_target_port": 0,  # Client 模式目标端口
         "arm_reconnect_interval": 5.0,  # Client 模式重连间隔（秒）
+        # 串口模式 (serial)
+        "arm_serial_port": "COM3",  # 串口名称
+        "arm_serial_baudrate": 115200,  # 波特率
+        # 串口高级参数（通常使用默认值即可）
+        "arm_serial_bytesize": 8,  # 数据位: 5, 6, 7, 8
+        "arm_serial_stopbits": 1,  # 停止位: 1, 1.5, 2
+        "arm_serial_parity": "N",  # 校验位: N(None), E(Even), O(Odd)
+        # 3720 配置
         "tc3720_mode": "simulator",
         "tc3720_host": "192.168.1.101",
         "tc3720_port": 9090,
@@ -148,12 +159,19 @@ def get_gateway_config(config: dict[str, Any] | None = None) -> GatewayConfig:
         raise ValueError(f"test_timeout 必须是正数，当前值: {test_timeout!r}")
 
     return GatewayConfig(
+        arm_mode=gw.get("arm_mode", "tcp_server"),
         arm_host=gw.get("arm_host", "0.0.0.0"),
         arm_port=arm_port,
-        arm_mode=gw.get("arm_mode", "tcp_server"),
         arm_target_host=gw.get("arm_target_host", ""),
         arm_target_port=gw.get("arm_target_port", 0),
         arm_reconnect_interval=float(gw.get("arm_reconnect_interval", 5.0)),
+        # 串口配置
+        arm_serial_port=gw.get("arm_serial_port", "COM3"),
+        arm_serial_baudrate=int(gw.get("arm_serial_baudrate", 115200)),
+        arm_serial_bytesize=int(gw.get("arm_serial_bytesize", 8)),
+        arm_serial_stopbits=int(gw.get("arm_serial_stopbits", 1)),
+        arm_serial_parity=str(gw.get("arm_serial_parity", "N")),
+        # 3720 配置
         tc3720_mode=gw.get("tc3720_mode", "simulator"),
         tc3720_host=gw.get("tc3720_host", "192.168.1.101"),
         tc3720_port=tc3720_port,

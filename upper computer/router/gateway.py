@@ -1,13 +1,18 @@
 """
-信号路由层 - 核心中转网关。
+信号路由层 - 透明中转网关。
 
-实现机械臂与 3720 芯片测试仪之间的全自动信号透传。
-使用 threading + Queue 架构，与 PyQt5 原生集成。
-事件驱动架构，零人工干预。
+实现机械臂与 3720 测试仪之间的纯数据透传，不做任何协议解析。
+
+架构：
+  机械臂 <──串口──> 上位机 <──TCP──> 3720测试仪
+                     ↓
+               纯数据透传
+               （日志记录）
+
+使用 threading 架构，确保线程安全。
 """
 
 import logging
-import queue
 import threading
 import time
 from dataclasses import dataclass
@@ -15,7 +20,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Callable
 
-from adapters import ArmAdapter, TC3720Adapter, TC3720Status
+from adapters import TC3720Status
 
 logger = logging.getLogger(__name__)
 
@@ -24,23 +29,17 @@ class GatewayState(Enum):
     """网关状态枚举。"""
 
     IDLE = "idle"  # 空闲监听
-    RECEIVED_START = "received_start"  # 收到 START_TEST
-    FORWARDED_3720 = "forwarded_3720"  # 已转发 3720
-    WAITING_RESULT = "waiting_result"  # 等待 3720 结果
-    AUTO_REPLY = "auto_reply"  # 已自动回传
+    FORWARDING = "forwarding"  # 透传中
     ERROR = "error"  # 异常状态
 
 
 class ErrorCode(Enum):
     """网关错误码定义。"""
 
-    NONE = "0000"  # 无错误
-    TIMEOUT_ARM = "E001"  # 机械臂通信超时
-    TIMEOUT_3720 = "E002"  # 3720 测试超时
-    ARM_DISCONNECTED = "E003"  # 机械臂断连
-    TC3720_ERROR = "E004"  # 3720 设备错误
-    PROTOCOL_ERROR = "E005"  # 协议解析错误
-    UNKNOWN = "EEEE"  # 未知错误
+    NONE = "0000"
+    ARM_DISCONNECTED = "E003"
+    TC3720_ERROR = "E004"
+    UNKNOWN = "EEEE"
 
 
 @dataclass
@@ -48,58 +47,60 @@ class TransferRecord:
     """中转记录。"""
 
     timestamp: str
-    state: GatewayState
-    group: str
-    bitmask: str
-    error_codes: list[str] | None = None
+    direction: str  # "arm_to_3720" 或 "3720_to_arm"
+    raw_data: str
+    size: int
     error_code: ErrorCode = ErrorCode.NONE
     error_message: str = ""
-    duration_ms: int = 0
 
 
 @dataclass
 class GatewayConfig:
     """网关配置。"""
 
+    # 机械臂配置
+    arm_mode: str = "tcp_server"
     arm_host: str = "0.0.0.0"
     arm_port: int = 8080
-    arm_mode: str = "tcp_server"  # tcp_server | tcp_client
-    arm_target_host: str = ""  # Client 模式目标地址
-    arm_target_port: int = 0  # Client 模式目标端口
-    arm_reconnect_interval: float = 5.0  # Client 模式重连间隔（秒）
-    tc3720_mode: str = "simulator"
+    arm_target_host: str = ""
+    arm_target_port: int = 0
+    arm_reconnect_interval: float = 5.0
+    # 串口模式
+    arm_serial_port: str = "COM3"
+    arm_serial_baudrate: int = 115200
+    arm_serial_bytesize: int = 8
+    arm_serial_stopbits: int = 1
+    arm_serial_parity: str = "N"
+    # 3720 配置
+    tc3720_mode: str = "tcp"
     tc3720_host: str = "192.168.1.101"
     tc3720_port: int = 9090
     test_timeout: float = 30.0
     enable_debug: bool = False
 
 
-class SignalGateway:
-    """全自动信号中转网关。
+class PassthroughGateway:
+    """透明中转网关。
 
-    核心职责：
-    1. 监听机械臂的 START_TEST 请求（TCP Server 被动接收）
-    2. 自动转发至 3720 测试仪
-    3. 接收 3720 测试结果
-    4. 自动回传机械臂（替换人工发送逻辑）
-    5. 异常处理与状态重置
+    纯数据透传模式：
+    1. 机械臂数据 -> 直接转发到 3720
+    2. 3720 数据 -> 直接转发到机械臂
+    3. 记录所有中转数据
 
-    业务流程（零人工干预）：
-    START_TEST → 转发 3720 → 等待结果 → 自动回传 → 重置空闲
-
-    使用 threading + Queue 架构，通过事件队列向 UI 线程推送更新。
+    不做任何协议解析，只是透传。
     """
 
     def __init__(
         self,
         config: GatewayConfig | None = None,
         on_state_changed: Callable[[GatewayState], None] | None = None,
-        on_arm_connected: Callable[[bool], None] | None = None,  # connected
+        on_arm_connected: Callable[[bool], None] | None = None,
         on_3720_status_changed: Callable[[TC3720Status], None] | None = None,
         on_record: Callable[[TransferRecord], None] | None = None,
+        on_raw_data: Callable[[str, str], None] | None = None,  # direction, data
         on_error: Callable[[ErrorCode, str], None] | None = None,
     ) -> None:
-        """初始化信号网关。
+        """初始化透明中转网关。
 
         Args:
             config: 网关配置。
@@ -107,6 +108,7 @@ class SignalGateway:
             on_arm_connected: 机械臂连接状态变化回调。
             on_3720_status_changed: 3720 状态变化回调。
             on_record: 中转记录回调。
+            on_raw_data: 原始数据回调（direction: "arm_to_3720" 或 "3720_to_arm"）。
             on_error: 错误发生回调。
         """
         self._config = config or GatewayConfig()
@@ -114,27 +116,19 @@ class SignalGateway:
         self._on_arm_connected = on_arm_connected
         self._on_3720_status_changed = on_3720_status_changed
         self._on_record = on_record
+        self._on_raw_data = on_raw_data
         self._on_error = on_error
 
-        # 设备适配器
-        self._arm_adapter: ArmAdapter | None = None
-        self._tc3720_adapter: TC3720Adapter | None = None
+        # 适配器
+        self._arm_adapter = None
+        self._tc3720_adapter = None
 
         # 内部状态
         self._state = GatewayState.IDLE
         self._running = False
-        self._record_start_time: float = 0
-
-        # 当前任务上下文（用于异常处理）
-        self._current_group: str = ""
-        self._current_bitmask: str = ""
 
         # 锁
         self._lock = threading.Lock()
-
-        # 超时监控线程
-        self._timeout_thread: threading.Thread | None = None
-        self._timeout_event = threading.Event()
 
     @property
     def state(self) -> GatewayState:
@@ -156,7 +150,10 @@ class SignalGateway:
     def arm_client_address(self) -> str | None:
         """获取已连接机械臂的地址。"""
         if self._arm_adapter:
-            return self._arm_adapter.client_address
+            if hasattr(self._arm_adapter, "client_address"):
+                return self._arm_adapter.client_address
+            if hasattr(self._arm_adapter, "port"):
+                return self._arm_adapter.port
         return None
 
     @property
@@ -177,35 +174,13 @@ class SignalGateway:
         if self._on_state_changed:
             self._on_state_changed(new_state)
 
-    def _set_record_start(self) -> None:
-        """记录任务开始时间。"""
-        self._record_start_time = time.perf_counter()
-
-    def _create_record(
-        self,
-        state: GatewayState,
-        group: str,
-        bitmask: str,
-        error_codes: list[str] | None = None,
-        error_code: ErrorCode = ErrorCode.NONE,
-        error_message: str = "",
-    ) -> TransferRecord:
+    def _create_record(self, direction: str, raw_data: str) -> TransferRecord:
         """创建中转记录。"""
-        duration_ms = 0
-        if self._record_start_time > 0:
-            duration_ms = int(
-                (time.perf_counter() - self._record_start_time) * 1000
-            )
-
         return TransferRecord(
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-            state=state,
-            group=group,
-            bitmask=bitmask,
-            error_codes=error_codes,
-            error_code=error_code,
-            error_message=error_message,
-            duration_ms=duration_ms,
+            direction=direction,
+            raw_data=raw_data,
+            size=len(raw_data),
         )
 
     def start(self) -> bool:
@@ -218,45 +193,83 @@ class SignalGateway:
             logger.warning("网关已在运行")
             return True
 
-        logger.info("启动信号中转网关...")
+        logger.info("启动透明中转网关...")
         self._running = True
 
-        # 初始化机械臂适配器
-        self._arm_adapter = ArmAdapter(
-            host=self._config.arm_host,
-            port=self._config.arm_port,
-            mode=self._config.arm_mode,
-            target_host=self._config.arm_target_host,
-            target_port=self._config.arm_target_port,
-            reconnect_interval=self._config.arm_reconnect_interval,
-            on_connected=self._on_arm_connected_callback,
-            on_disconnected=self._on_arm_disconnected_callback,
-            on_start_test=self._on_start_test_received,
-            on_error=self._on_arm_error,
-        )
+        try:
+            # 初始化机械臂适配器（串口模式）
+            if self._config.arm_mode == "serial":
+                from adapters.serial_arm_adapter import SerialArmAdapter
 
-        # 初始化 3720 适配器
-        self._tc3720_adapter = TC3720Adapter(
-            mode=self._config.tc3720_mode,
-            host=self._config.tc3720_host,
-            port=self._config.tc3720_port,
-            on_status_changed=self._on_3720_status_changed_callback,
-            on_test_complete=self._on_3720_test_complete,
-            on_error=self._on_3720_error,
-        )
+                logger.info("初始化串口适配器: %s @ %d",
+                          self._config.arm_serial_port,
+                          self._config.arm_serial_baudrate)
 
-        # 启动机械臂监听
-        if not self._arm_adapter.start():
-            self._cleanup()
-            return False
+                self._arm_adapter = SerialArmAdapter(
+                    port=self._config.arm_serial_port,
+                    baudrate=self._config.arm_serial_baudrate,
+                    bytesize=self._config.arm_serial_bytesize,
+                    stopbits=self._config.arm_serial_stopbits,
+                    parity=self._config.arm_serial_parity,
+                    on_connected=self._on_arm_connected_callback,
+                    on_disconnected=self._on_arm_disconnected_callback,
+                    on_data_received=self._on_arm_data_received,  # 透传模式：直接接收数据
+                    on_error=self._on_arm_error,
+                )
+            else:
+                # TCP 模式
+                from adapters.arm_adapter import ArmAdapter
 
-        # 连接 3720 设备
+                logger.info("初始化 TCP 适配器: %s:%s", self._config.arm_mode, self._config.arm_port)
+                self._arm_adapter = ArmAdapter(
+                    host=self._config.arm_host,
+                    port=self._config.arm_port,
+                    mode=self._config.arm_mode,
+                    target_host=self._config.arm_target_host,
+                    target_port=self._config.arm_target_port,
+                    reconnect_interval=self._config.arm_reconnect_interval,
+                    on_connected=self._on_arm_connected_callback,
+                    on_disconnected=self._on_arm_disconnected_callback,
+                    on_data_received=self._on_arm_data_received,  # 透传模式
+                    on_error=self._on_arm_error,
+                )
+        except Exception as e:
+            logger.error("初始化机械臂适配器失败: %s", e)
+            self._running = False
+            raise
+
+        try:
+            # 初始化 3720 TCP 适配器
+            from adapters.tc3720_tcp_adapter import TC3720TcpAdapter
+
+            logger.info("初始化 3720 TCP 适配器: %s:%d",
+                      self._config.tc3720_host,
+                      self._config.tc3720_port)
+
+            self._tc3720_adapter = TC3720TcpAdapter(
+                host=self._config.tc3720_host,
+                port=self._config.tc3720_port,
+                on_status_changed=self._on_3720_status_changed_callback,
+                on_data_received=self._on_tc3720_data_received,  # 透传模式
+                on_error=self._on_3720_error,
+            )
+        except Exception as e:
+            logger.error("初始化 3720 适配器失败: %s", e)
+            self._running = False
+            raise
+
+        # 先连接 3720 设备（确保 3720 已连接后再启动机械臂监听）
         if not self._tc3720_adapter.connect():
             self._cleanup()
             return False
 
+        # 启动机械臂监听（机械臂可能立即开始发送数据）
+        if not self._arm_adapter.start():
+            self._cleanup()
+            return False
+
         self._set_state(GatewayState.IDLE)
-        logger.info("信号中转网关已启动，等待机械臂连接...")
+        logger.info("透明中转网关已启动，数据将透传到 3720...")
         return True
 
     def stop(self) -> None:
@@ -264,18 +277,11 @@ class SignalGateway:
         if not self._running:
             return
 
-        logger.info("停止信号中转网关...")
+        logger.info("停止透明中转网关...")
         self._running = False
-
-        # 停止超时监控
-        self._timeout_event.set()
-        if self._timeout_thread and self._timeout_thread.is_alive():
-            self._timeout_thread.join(timeout=1.0)
-            self._timeout_thread = None
-
         self._set_state(GatewayState.IDLE)
         self._cleanup()
-        logger.info("信号中转网关已停止")
+        logger.info("透明中转网关已停止")
 
     def _cleanup(self) -> None:
         """清理资源。"""
@@ -287,24 +293,23 @@ class SignalGateway:
             self._tc3720_adapter.disconnect()
             self._tc3720_adapter = None
 
-    def _on_arm_connected_callback(self, adapter: ArmAdapter) -> None:
+    def _on_arm_connected_callback(self, adapter) -> None:
         """机械臂连接回调。"""
-        logger.info("机械臂已连接: %s", adapter.client_address)
+        if hasattr(adapter, "port"):
+            address = adapter.port
+        elif hasattr(adapter, "client_address"):
+            address = adapter.client_address
+        else:
+            address = "unknown"
+        logger.info("机械臂已连接: %s", address)
         if self._on_arm_connected:
             self._on_arm_connected(True)
 
-    def _on_arm_disconnected_callback(self, adapter: ArmAdapter) -> None:
+    def _on_arm_disconnected_callback(self, adapter) -> None:
         """机械臂断开连接回调。"""
         logger.info("机械臂已断开连接")
         if self._on_arm_connected:
             self._on_arm_connected(False)
-
-        # 如果正在处理任务，标记异常
-        with self._lock:
-            current_state = self._state
-
-        if current_state not in (GatewayState.IDLE, GatewayState.ERROR):
-            self._report_error(ErrorCode.ARM_DISCONNECTED, "机械臂在任务执行中断开连接")
 
     def _on_arm_error(self, error: str) -> None:
         """机械臂错误回调。"""
@@ -318,252 +323,148 @@ class SignalGateway:
         if self._on_3720_status_changed:
             self._on_3720_status_changed(status)
 
-    def _on_3720_test_complete(self, error_codes: list[str]) -> None:
-        """3720 测试完成回调。"""
-        logger.info("3720 测试完成，ErrorCodes: %s", error_codes)
-        self._handle_test_complete(error_codes)
-
     def _on_3720_error(self, error: str) -> None:
         """3720 错误回调。"""
         logger.error("3720 通信错误: %s", error)
         if self._on_error:
             self._on_error(ErrorCode.TC3720_ERROR, error)
 
-        # 通知机械臂异常
-        self._send_abort_to_arm(ErrorCode.TC3720_ERROR, error)
-
-    def on_start_test(self, group: str, bitmask: str) -> None:
-        """收到 START_TEST 指令的回调（供外部调用）。
+    def _on_arm_data_received(self, data: str) -> None:
+        """机械臂数据接收回调（提取关键字段并透传到 3720）。
 
         Args:
-            group: 组号。
-            bitmask: DUT 位掩码。
+            data: 从机械臂接收的原始数据。
         """
-        if not self._running:
-            logger.warning("网关未运行，忽略 START_TEST")
+        if not data:
             return
 
-        with self._lock:
-            current_state = self._state
+        logger.info("收到机械臂数据 [%d 字节]: %r", len(data), data)
 
-        if current_state != GatewayState.IDLE:
-            logger.warning(
-                "网关忙碌（状态: %s），忽略重复 START_TEST", current_state.value
-            )
-            return
+        # 记录原始数据
+        record = self._create_record("arm_to_3720", data)
+        if self._on_record:
+            self._on_record(record)
+        if self._on_raw_data:
+            self._on_raw_data("arm_to_3720", data)
 
-        logger.info("收到 START_TEST - Group: %s, Bitmask: %s", group, bitmask)
+        # 提取关键字段 SendUart:Start
+        if "SendUart:Start" in data:
+            key_data = "SendUart:Start\r\n"
+            logger.info("[ARM-RX] 检测到 SendUart:Start，准备转发到 3720...")
 
-        # 记录任务开始
-        self._set_record_start()
-        self._current_group = group
-        self._current_bitmask = bitmask
+            # 等待 3720 连接后再发送
+            wait_result = self._wait_for_tc3720_connected(timeout=10.0)
 
-        # 更新状态：已收到 START_TEST
-        self._set_state(GatewayState.RECEIVED_START)
-
-        # 自动转发至 3720
-        self._forward_to_3720(group, bitmask)
-
-    def _on_start_test_received(self, group: str, bitmask: str) -> None:
-        """收到 START_TEST 指令的回调（由适配器触发）。"""
-        self.on_start_test(group, bitmask)
-
-    def _forward_to_3720(self, group: str, bitmask: str) -> None:
-        """转发测试请求至 3720。
-
-        Args:
-            group: 组号。
-            bitmask: DUT 位掩码。
-        """
-        if not self._tc3720_adapter:
-            self._report_error(ErrorCode.UNKNOWN, "3720 适配器未初始化")
-            return
-
-        # 更新状态：已转发 3720
-        self._set_state(GatewayState.FORWARDED_3720)
-
-        # 启动 3720 测试
-        success = self._tc3720_adapter.start_test(
-            group, bitmask, timeout=self._config.test_timeout
-        )
-
-        if not success:
-            self._report_error(ErrorCode.TC3720_ERROR, "3720 测试启动失败")
-            self._send_abort_to_arm(ErrorCode.TC3720_ERROR, "3720 测试启动失败")
-            return
-
-        # 更新状态：等待结果
-        self._set_state(GatewayState.WAITING_RESULT)
-        logger.info("等待 3720 测试结果，超时时间: %.1f秒", self._config.test_timeout)
-
-        # 启动超时监控线程
-        self._start_timeout_monitor()
-
-    def _start_timeout_monitor(self) -> None:
-        """启动超时监控线程。"""
-        self._timeout_event.clear()
-
-        self._timeout_thread = threading.Thread(
-            target=self._timeout_monitor_loop,
-            name="Gateway-TimeoutMonitor",
-            daemon=True,
-        )
-        self._timeout_thread.start()
-
-    def _timeout_monitor_loop(self) -> None:
-        """超时监控循环（在线程中运行）。"""
-        timeout = self._config.test_timeout
-        interval = 0.5  # 检查间隔
-        elapsed = 0.0
-
-        while elapsed < timeout:
-            # 检查停止事件
-            if self._timeout_event.is_set():
+            if not wait_result:
+                logger.warning("[ARM-RX] 3720 未连接，跳过发送")
                 return
 
-            # 等待
-            time.sleep(interval)
-            elapsed += interval
+            # 连接成功，发送数据
+            self._forward_to_tc3720(key_data)
+            logger.info("[ARM-RX] 已转发 SendUart:Start 到 3720")
 
-            # 检查是否仍在等待结果
-            with self._lock:
-                current_state = self._state
-
-            if current_state == GatewayState.WAITING_RESULT:
-                continue
-            elif current_state in (GatewayState.IDLE, GatewayState.AUTO_REPLY):
-                # 正常完成
-                return
-            else:
-                # 其他状态
-                return
-
-        # 超时
-        if self._running:
-            logger.error("3720 测试超时")
-            tc3720_adapter = None
-            with self._lock:
-                current_state = self._state
-                if current_state == GatewayState.WAITING_RESULT:
-                    # 在锁内获取适配器引用，避免竞态条件
-                    tc3720_adapter = self._tc3720_adapter
-
-            if tc3720_adapter:
-                tc3720_adapter.abort_test()
-            self._report_error(
-                ErrorCode.TIMEOUT_3720, "3720 测试超时"
-            )
-            self._send_abort_to_arm(
-                ErrorCode.TIMEOUT_3720, "3720 测试超时"
-            )
-
-    def _handle_test_complete(self, error_codes: list[str]) -> None:
-        """处理 3720 测试完成。
-
-        Args:
-            error_codes: 错误码列表。
-        """
-        # 停止超时监控
-        self._timeout_event.set()
-
-        with self._lock:
-            current_state = self._state
-
-        if current_state != GatewayState.WAITING_RESULT:
-            logger.warning(
-                "状态异常（%s），忽略测试完成事件", current_state.value
-            )
-            return
-
-        logger.info("处理测试完成，回传机械臂 - Group: %s", self._current_group)
-
-        # 更新状态：自动回传
-        self._set_state(GatewayState.AUTO_REPLY)
-
-        # 自动回传机械臂
-        if self._arm_adapter and self._arm_adapter.is_connected:
-            success = self._arm_adapter.send_test_done(
-                self._current_group, error_codes
-            )
-
-            if not success:
-                self._report_error(
-                    ErrorCode.UNKNOWN, "回传机械臂失败"
-                )
+        elif "MAC:" in data or "W5500" in data or "Remote IP" in data:
+            # 忽略配置信息，只记录日志
+            logger.info("收到配置信息，等待 SendUart:Start...")
         else:
-            self._report_error(
-                ErrorCode.ARM_DISCONNECTED, "机械臂未连接，无法回传"
-            )
+            # 其他数据透传
+            logger.info("收到其他数据，等待 SendUart:Start...")
 
-        # 记录完成
-        record = self._create_record(
-            state=GatewayState.AUTO_REPLY,
-            group=self._current_group,
-            bitmask=self._current_bitmask,
-            error_codes=error_codes,
-        )
-        if self._on_record:
-            self._on_record(record)
-
-        # 重置为空闲状态
-        self._reset_to_idle()
-
-    def _send_abort_to_arm(
-        self, error_code: ErrorCode, message: str
-    ) -> None:
-        """向机械臂发送异常中止信号。
+    def _wait_for_tc3720_connected(self, timeout: float = 5.0) -> bool:
+        """等待 3720 连接成功。
 
         Args:
-            error_code: 错误码。
-            message: 错误消息。
+            timeout: 超时时间（秒）。
+
+        Returns:
+            是否连接成功。
         """
-        logger.warning("发送异常中止信号 - %s: %s", error_code.value, message)
+        import time
+        start_time = time.time()
+        last_log_time = 0  # 控制日志频率
 
-        if self._arm_adapter and self._arm_adapter.is_connected:
-            self._arm_adapter.send_abort(error_code.value)
+        while time.time() - start_time < timeout:
+            if self._tc3720_adapter and hasattr(self._tc3720_adapter, 'is_connected'):
+                is_connected = self._tc3720_adapter.is_connected
+                elapsed = time.time() - start_time
 
-    def _report_error(self, error_code: ErrorCode, message: str) -> None:
-        """报告错误。
+                # 每秒打印一次状态
+                if elapsed - last_log_time >= 1.0:
+                    status = self._tc3720_adapter.status
+                    logger.info("等待 3720 连接... [%d秒] status=%s, is_connected=%s",
+                              int(elapsed), status.value, is_connected)
+                    last_log_time = elapsed
+
+                if is_connected:
+                    logger.info("3720 已连接，等待结束")
+                    return True
+            time.sleep(0.1)
+
+        # 超时时打印详细状态
+        if self._tc3720_adapter:
+            status = self._tc3720_adapter.status
+            is_connected = self._tc3720_adapter.is_connected if hasattr(self._tc3720_adapter, 'is_connected') else "N/A"
+            logger.warning("等待 3720 连接超时 [%d秒] status=%s, is_connected=%s",
+                         int(timeout), status.value, is_connected)
+
+        return False
+
+    def _forward_to_tc3720(self, data: str) -> None:
+        """转发数据到 3720。
 
         Args:
-            error_code: 错误码。
-            message: 错误消息。
+            data: 要发送的数据。
         """
-        logger.error("网关错误 [%s]: %s", error_code.value, message)
+        if self._tc3720_adapter is None:
+            logger.error("[ARM-RX] 3720 适配器未初始化")
+            return
 
-        # 记录错误
-        record = self._create_record(
-            state=GatewayState.ERROR,
-            group=self._current_group,
-            bitmask=self._current_bitmask,
-            error_code=error_code,
-            error_message=message,
-        )
+        if not self._tc3720_adapter.is_connected:
+            logger.warning("[ARM-RX] 3720 未连接，发送失败")
+            return
+
+        success = self._tc3720_adapter.send_raw(data)
+        if success:
+            logger.debug("已转发数据到 3720 [%d 字节]", len(data))
+        else:
+            logger.error("转发数据到 3720 失败")
+
+    def _on_tc3720_data_received(self, data: str) -> None:
+        """3720 数据接收回调（透传到机械臂）。
+
+        Args:
+            data: 从 3720 接收的原始数据。
+        """
+        if not data:
+            return
+
+        logger.info("收到 3720 数据 [%d 字节]: %r", len(data), data)
+
+        # 记录并触发回调
+        record = self._create_record("3720_to_arm", data)
         if self._on_record:
             self._on_record(record)
+        if self._on_raw_data:
+            self._on_raw_data("3720_to_arm", data)
 
-        # 触发错误回调
-        if self._on_error:
-            self._on_error(error_code, message)
+        # 透传到机械臂
+        self._forward_to_arm(data)
 
-        # 更新状态
-        self._set_state(GatewayState.ERROR)
+    def _forward_to_arm(self, data: str) -> None:
+        """转发数据到机械臂。
 
-    def _reset_to_idle(self) -> None:
-        """重置为空闲状态。"""
-        self._current_group = ""
-        self._current_bitmask = ""
+        Args:
+            data: 要发送的数据。
+        """
+        if self._arm_adapter and hasattr(self._arm_adapter, 'send_raw'):
+            success = self._arm_adapter.send_raw(data)
+            if success:
+                logger.info("已透传到机械臂 [%d 字节]: %r", len(data), data)
+            else:
+                logger.warning("透传到机械臂失败")
+        else:
+            logger.warning("机械臂未连接，无法透传")
 
-        # 短暂延迟后重置为空闲
-        time.sleep(0.1)
-        self._set_state(GatewayState.IDLE)
 
-    def clear_alarm(self) -> None:
-        """清除告警，重置网关状态。"""
-        with self._lock:
-            current_state = self._state
-
-        if current_state == GatewayState.ERROR:
-            self._reset_to_idle()
-            logger.info("告警已清除")
+# 保持向后兼容
+SignalGateway = PassthroughGateway
