@@ -54,6 +54,14 @@ COLOR_PROCESSING = "#8b5cf6"
 COLOR_PROCESSING_BG = "#8b5cf620"
 COLOR_PROCESSING_BORDER = "#8b5cf640"
 
+# 主动测试区域颜色
+COLOR_TEST_CONTROL = "#10b981"       # 测试控制强调色（青绿）
+COLOR_TEST_CONTROL_BG = "#10b98115"
+COLOR_TEST_CONTROL_BORDER = "#10b98130"
+COLOR_TEST_ACTIVE = "#f59e0b"        # 测试进行中（橙色）
+COLOR_TEST_SUCCESS = "#22c55e"       # 测试通过
+COLOR_TEST_FAILED = "#ef4444"        # 测试失败
+
 # 强调色
 COLOR_ACCENT = "#3b82f6"          # 链接、强调
 COLOR_ACCENT_HOVER = "#60a5fa"    # 悬停强调
@@ -282,5 +290,88 @@ def card_style(bg_color: str = COLOR_BG_SECONDARY, border_color: str = COLOR_BOR
         background-color: {bg_color};
         border: 1px solid {border_color};
         border-radius: {RADIUS_MD};
+    }}
+    """
+
+
+# 测试控制按钮样式（主按钮）
+def test_button_style(
+    bg_color: str = COLOR_SUCCESS,
+    hover_color: str = "#16a34a",
+) -> str:
+    """生成测试按钮样式。
+
+    Args:
+        bg_color: 背景色
+        hover_color: 悬停背景色
+    """
+    return f"""
+    QPushButton {{
+        background-color: {bg_color};
+        color: white;
+        border: none;
+        border-radius: {RADIUS_MD};
+        font-size: {FONT_SIZE_LG};
+        font-weight: bold;
+        padding: 14px 24px;
+        min-height: 48px;
+    }}
+    QPushButton:hover {{
+        background-color: {hover_color};
+    }}
+    QPushButton:pressed {{
+        background-color: {bg_color};
+    }}
+    QPushButton:disabled {{
+        background-color: {COLOR_TEXT_DISABLED};
+        color: {COLOR_BG_SECONDARY};
+    }}
+    """
+
+
+# 次要操作按钮样式
+def secondary_button_style() -> str:
+    """生成次要按钮样式。"""
+    return f"""
+    QPushButton {{
+        background-color: {COLOR_BG_TERTIARY};
+        color: {COLOR_TEXT_PRIMARY};
+        border: 1px solid {COLOR_BORDER};
+        border-radius: {RADIUS_SM};
+        font-size: {FONT_SIZE_SM};
+        padding: 6px 12px;
+    }}
+    QPushButton:hover {{
+        background-color: {COLOR_BG_HOVER};
+        border-color: {COLOR_TEXT_MUTED};
+    }}
+    QPushButton:pressed {{
+        background-color: {COLOR_BG_SECONDARY};
+    }}
+    """
+
+
+# DUT 网格项样式
+def dut_item_style(status: str = "offline") -> str:
+    """生成 DUT 网格项样式。
+
+    Args:
+        status: 状态 ('offline', 'online', 'testing', 'success', 'failed')
+    """
+    colors = {
+        "offline": (COLOR_IDLE, COLOR_IDLE_BG),
+        "online": (COLOR_SUCCESS, COLOR_SUCCESS_BG),
+        "testing": (COLOR_TEST_ACTIVE, "#f59e0b20"),
+        "success": (COLOR_SUCCESS, COLOR_SUCCESS_BG),
+        "failed": (COLOR_ERROR, COLOR_ERROR_BG),
+    }
+    color, bg = colors.get(status, (COLOR_IDLE, COLOR_IDLE_BG))
+    return f"""
+    QFrame {{
+        background-color: {bg};
+        border: 1px solid {COLOR_BORDER};
+        border-radius: {RADIUS_SM};
+        min-width: 60px;
+        min-height: 50px;
     }}
     """

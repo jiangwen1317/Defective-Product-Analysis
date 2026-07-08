@@ -21,14 +21,20 @@ from ui.styles import (
     COLOR_BG_TERTIARY,
     COLOR_BORDER,
     COLOR_ERROR,
+    COLOR_ERROR_BG,
+    COLOR_ERROR_BORDER,
     COLOR_IDLE,
     COLOR_INFO,
     COLOR_PROCESSING,
     COLOR_SUCCESS,
+    COLOR_SUCCESS_BG,
+    COLOR_SUCCESS_BORDER,
     COLOR_TEXT_MUTED,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_WARNING,
+    COLOR_WARNING_BG,
+    COLOR_WARNING_BORDER,
     FONT_MONO,
     FONT_SIZE_2XL,
     FONT_SIZE_3XL,
@@ -494,3 +500,371 @@ class InfoRow(QWidget):
     def set_value(self, value: str) -> None:
         """设置值。"""
         self._value_widget.setText(value)
+
+
+class DutGridPanel(QWidget):
+    """DUT 状态网格面板。
+
+    以 2×4 网格形式显示 8 个 DUT 的状态，每个 DUT 显示编号和状态。
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """初始化 DUT 网格面板。"""
+        super().__init__(parent)
+        self._dut_widgets: dict[int, QFrame] = {}
+        self._dut_status_labels: dict[int, QLabel] = {}
+        self._dut_indicators: dict[int, StatusIndicator] = {}
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """设置 UI。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACING_MD)
+
+        # 创建 2×4 网格
+        for row in range(2):
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(SPACING_SM)
+            row_layout.addStretch()  # 居中效果
+
+            for col in range(4):
+                dut_index = row * 4 + col + 1  # 1-8
+                dut_frame = self._create_dut_item(dut_index)
+                self._dut_widgets[dut_index] = dut_frame
+                row_layout.addWidget(dut_frame)
+
+            row_layout.addStretch()  # 居中效果
+            layout.addLayout(row_layout)
+
+    def _create_dut_item(self, dut_index: int) -> QFrame:
+        """创建单个 DUT 项。
+
+        Args:
+            dut_index: DUT 编号 (1-8)
+
+        Returns:
+            DUT 项框架
+        """
+        frame = QFrame()
+        frame.setFixedSize(65, 55)
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLOR_BG_TERTIARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_SM};
+            }}
+        """)
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignCenter)
+
+        # 状态指示器 + 编号
+        header_layout = QHBoxLayout()
+        header_layout.setAlignment(Qt.AlignCenter)
+        header_layout.setSpacing(4)
+
+        indicator = StatusIndicator("offline", 8)
+        self._dut_indicators[dut_index] = indicator
+        header_layout.addWidget(indicator)
+
+        index_label = QLabel(f"#{dut_index}")
+        index_label.setStyleSheet(f"""
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_SM};
+            font-weight: bold;
+        """)
+        header_layout.addWidget(index_label)
+        layout.addLayout(header_layout)
+
+        # 状态文字
+        status_label = QLabel("离线")
+        status_label.setAlignment(Qt.AlignCenter)
+        status_label.setStyleSheet(f"""
+            color: {COLOR_TEXT_MUTED};
+            font-size: {FONT_SIZE_XS};
+        """)
+        self._dut_status_labels[dut_index] = status_label
+        layout.addWidget(status_label)
+
+        return frame
+
+    def set_dut_status(self, dut_index: int, status: str) -> None:
+        """设置单个 DUT 的状态。
+
+        Args:
+            dut_index: DUT 编号 (1-8)
+            status: 状态 ('offline', 'online', 'testing', 'success', 'failed', 'error')
+        """
+        if dut_index not in self._dut_widgets:
+            return
+
+        # 状态文本映射
+        status_texts = {
+            "offline": "离线",
+            "online": "就绪",
+            "testing": "测试中",
+            "success": "通过",
+            "failed": "失败",
+            "error": "异常",
+        }
+
+        # 更新指示器
+        if dut_index in self._dut_indicators:
+            self._dut_indicators[dut_index].set_status(status)
+
+        # 更新状态文字和样式
+        frame = self._dut_widgets[dut_index]
+        status_label = self._dut_status_labels[dut_index]
+        status_text = status_texts.get(status, status)
+        status_label.setText(status_text)
+
+        # 更新边框和背景颜色
+        colors = {
+            "offline": (COLOR_BORDER, COLOR_BG_TERTIARY),
+            "online": (COLOR_SUCCESS_BORDER, COLOR_SUCCESS_BG),
+            "testing": (COLOR_WARNING_BORDER, "#f59e0b20"),
+            "success": (COLOR_SUCCESS_BORDER, COLOR_SUCCESS_BG),
+            "failed": (COLOR_ERROR_BORDER, COLOR_ERROR_BG),
+            "error": (COLOR_ERROR_BORDER, COLOR_ERROR_BG),
+        }
+        border_color, bg_color = colors.get(status, (COLOR_BORDER, COLOR_BG_TERTIARY))
+
+        text_colors = {
+            "offline": COLOR_TEXT_MUTED,
+            "online": COLOR_SUCCESS,
+            "testing": COLOR_WARNING,
+            "success": COLOR_SUCCESS,
+            "failed": COLOR_ERROR,
+            "error": COLOR_ERROR,
+        }
+        text_color = text_colors.get(status, COLOR_TEXT_MUTED)
+
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: {RADIUS_SM};
+            }}
+        """)
+        status_label.setStyleSheet(f"color: {text_color}; font-size: {FONT_SIZE_XS};")
+
+    def reset_all(self) -> None:
+        """重置所有 DUT 状态为离线。"""
+        for dut_index in range(1, 9):
+            self.set_dut_status(dut_index, "offline")
+
+
+class TestProgressPanel(QWidget):
+    """测试进度面板。
+
+    显示测试进度、各 DUT 结果和统计信息。
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """初始化测试进度面板。"""
+        super().__init__(parent)
+        self._dut_results: dict[int, str] = {i: "-" for i in range(1, 9)}
+        self._result_labels: dict[int, QLabel] = {}
+        self._is_testing = False
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """设置 UI。"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACING_SM)
+
+        # 状态行
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(SPACING_SM)
+
+        self._status_indicator = StatusIndicator("offline", 10)
+        status_layout.addWidget(self._status_indicator)
+
+        self._status_label = QLabel("等待测试")
+        self._status_label.setStyleSheet(f"""
+            color: {COLOR_TEXT_MUTED};
+            font-size: {FONT_SIZE_SM};
+            font-weight: 500;
+        """)
+        status_layout.addWidget(self._status_label)
+        status_layout.addStretch()
+
+        layout.addLayout(status_layout)
+
+        # 进度条
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setFixedHeight(8)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {COLOR_BG_TERTIARY};
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {COLOR_SUCCESS};
+                border-radius: 4px;
+            }}
+        """)
+        self._progress_bar.setValue(0)
+        layout.addWidget(self._progress_bar)
+
+        # 结果行（8个 DUT 的结果）
+        results_layout = QHBoxLayout()
+        results_layout.setSpacing(SPACING_XS)
+
+        for i in range(1, 9):
+            result_label = QLabel("-")
+            result_label.setFixedWidth(36)
+            result_label.setAlignment(Qt.AlignCenter)
+            result_label.setStyleSheet(f"""
+                color: {COLOR_TEXT_MUTED};
+                font-size: {FONT_SIZE_XS};
+                font-family: {FONT_MONO};
+            """)
+            self._result_labels[i] = result_label
+            results_layout.addWidget(result_label)
+
+        results_layout.addStretch()
+        layout.addLayout(results_layout)
+
+    def start_test(self, dut_indices: list[int]) -> None:
+        """开始测试。
+
+        Args:
+            dut_indices: 要测试的 DUT 编号列表
+        """
+        self._is_testing = True
+
+        # 更新状态
+        self._status_indicator.set_status("processing")
+        self._status_indicator.start_pulse()
+        self._status_label.setText("测试进行中...")
+        self._status_label.setStyleSheet(f"color: {COLOR_PROCESSING}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
+
+        # 重置结果
+        for i in range(1, 9):
+            self._dut_results[i] = "-"
+            if i in self._result_labels:
+                self._result_labels[i].setText("-")
+                self._result_labels[i].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
+
+        # 重置进度条
+        self._progress_bar.setValue(0)
+        self._progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {COLOR_BG_TERTIARY};
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {COLOR_TEST_ACTIVE};
+                border-radius: 4px;
+            }}
+        """)
+
+    def update_dut_result(self, dut_index: int, result: str) -> None:
+        """更新单个 DUT 的测试结果。
+
+        Args:
+            dut_index: DUT 编号 (1-8)
+            result: 测试结果 ('0000' = 通过，其他 = 失败错误码)
+        """
+        if dut_index not in self._result_labels:
+            return
+
+        self._dut_results[dut_index] = result
+        label = self._result_labels[dut_index]
+
+        if result == "0000":
+            label.setText("✓")
+            label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+        elif result == "-":
+            label.setText("-")
+            label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
+        else:
+            label.setText("✗")
+            label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+
+        # 更新进度
+        completed = sum(1 for r in self._dut_results.values() if r != "-")
+        total = 8
+        if total > 0:
+            self._progress_bar.setValue(int(completed / total * 100))
+
+    def complete_test(self, results: dict[int, str]) -> None:
+        """测试完成。
+
+        Args:
+            results: 测试结果字典 {dut_index: error_code}
+        """
+        self._is_testing = False
+        self._status_indicator.stop_pulse()
+
+        # 计算通过率
+        passed = sum(1 for code in results.values() if code == "0000")
+        total = len(results)
+        rate = (passed / total * 100) if total > 0 else 0
+
+        if rate == 100:
+            self._status_indicator.set_status("online")
+            self._status_label.setText(f"测试完成 - 全部通过 ({passed}/{total})")
+            self._status_label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
+            self._progress_bar.setStyleSheet(f"""
+                QProgressBar {{
+                    background-color: {COLOR_BG_TERTIARY};
+                    border: none;
+                    border-radius: 4px;
+                }}
+                QProgressBar::chunk {{
+                    background-color: {COLOR_SUCCESS};
+                    border-radius: 4px;
+                }}
+            """)
+        else:
+            self._status_indicator.set_status("error")
+            self._status_label.setText(f"测试完成 - {passed}/{total} 通过")
+            self._status_label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
+            self._progress_bar.setStyleSheet(f"""
+                QProgressBar {{
+                    background-color: {COLOR_BG_TERTIARY};
+                    border: none;
+                    border-radius: 4px;
+                }}
+                QProgressBar::chunk {{
+                    background-color: {COLOR_ERROR};
+                    border-radius: 4px;
+                }}
+            """)
+
+        self._progress_bar.setValue(100)
+
+        # 更新所有结果标签
+        for dut_index, error_code in results.items():
+            if dut_index in self._result_labels:
+                label = self._result_labels[dut_index]
+                if error_code == "0000":
+                    label.setText("✓")
+                    label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+                else:
+                    label.setText("✗")
+                    label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
+
+    def reset(self) -> None:
+        """重置面板状态。"""
+        self._is_testing = False
+        self._status_indicator.stop_pulse()
+        self._status_indicator.set_status("offline")
+        self._status_label.setText("等待测试")
+        self._status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
+        self._progress_bar.setValue(0)
+
+        for i in range(1, 9):
+            self._dut_results[i] = "-"
+            if i in self._result_labels:
+                self._result_labels[i].setText("-")
+                self._result_labels[i].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
