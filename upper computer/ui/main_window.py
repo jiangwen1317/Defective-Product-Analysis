@@ -13,7 +13,6 @@
 """
 
 import logging
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -757,84 +756,10 @@ class MainWindow(QMainWindow):
         trigger_btn.clicked.connect(self._on_trigger_test)
         debug_layout.addWidget(trigger_btn)
 
-        # 分隔线
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background-color: {COLOR_BORDER}; max-height: 1px;")
-        debug_layout.addWidget(sep)
-
-        # 手动注入区域
-        inject_label = QLabel("手动模拟模式")
-        inject_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}; font-weight: bold;")
-        debug_layout.addWidget(inject_label)
-
-        # Group 输入
-        group_row = QHBoxLayout()
-        group_row.setSpacing(SPACING_SM)
-
-        group_label = QLabel("Group:")
-        group_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        group_row.addWidget(group_label)
-
-        self._debug_group_input = QLineEdit()
-        self._debug_group_input.setPlaceholderText("00")
-        self._debug_group_input.setFixedWidth(60)
-        self._debug_group_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {COLOR_BG_TERTIARY};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_SM};
-                padding: 4px 8px;
-                font-size: {FONT_SIZE_SM};
-                font-family: {FONT_MONO};
-            }}
-        """)
-        group_row.addWidget(self._debug_group_input)
-
-        bitmask_label = QLabel("Bitmask:")
-        bitmask_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        group_row.addWidget(bitmask_label)
-
-        self._debug_bitmask_input = QLineEdit()
-        self._debug_bitmask_input.setPlaceholderText("11000000")
-        self._debug_bitmask_input.setFixedWidth(80)
-        self._debug_bitmask_input.setText("11000000")  # 默认测试前两个 DUT
-        self._debug_bitmask_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {COLOR_BG_TERTIARY};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_SM};
-                padding: 4px 8px;
-                font-size: {FONT_SIZE_SM};
-                font-family: {FONT_MONO};
-            }}
-        """)
-        group_row.addWidget(self._debug_bitmask_input)
-
-        group_row.addStretch()
-
-        debug_layout.addLayout(group_row)
-
-        # 注入按钮
-        inject_btn = QPushButton("⚡ 模拟 START_TEST")
-        inject_btn.setFixedHeight(32)
-        inject_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLOR_ACCENT};
-                color: white;
-                border: none;
-                border-radius: {RADIUS_SM};
-                font-size: {FONT_SIZE_SM};
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_ACCENT_HOVER};
-            }}
-        """)
-        inject_btn.clicked.connect(self._on_inject_test_signal)
-        debug_layout.addWidget(inject_btn)
+        # 提示信息
+        hint_label = QLabel("机械臂将自动循环发送测试指令")
+        hint_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-style: italic;")
+        debug_layout.addWidget(hint_label)
 
         # 调试工具仅在调试模式下显示
         self._debug_card.setVisible(self._gateway_config.enable_debug)
@@ -1018,27 +943,6 @@ class MainWindow(QMainWindow):
         """只选择前两个板子。"""
         for i, checkbox in enumerate(self._board_checkboxes):
             checkbox.setChecked(i < 2)
-
-    def _on_inject_test_signal(self) -> None:
-        """注入测试信号（调试用）。"""
-        if self._gateway is None or not self._gateway.is_running:
-            self._log("错误", "网关未启动，无法注入信号")
-            return
-
-        group = self._debug_group_input.text().strip().upper() or "00"
-        bitmask = self._debug_bitmask_input.text().strip() or "11111111"
-
-        # 验证输入
-        if not re.match(r"^[0-9A-Fa-f]{2}$", group):
-            self._log("错误", "Group 必须是2位十六进制数")
-            return
-
-        if not re.match(r"^[01]{8}$", bitmask):
-            self._log("错误", "Bitmask 必须是8位二进制字符串")
-            return
-
-        self._gateway.on_start_test(group, bitmask)
-        self._log("调试", f"已注入测试信号 - Group: {group}, Bitmask: {bitmask}")
 
     def _on_gateway_state_changed(self, state: GatewayState) -> None:
         """网关状态变化回调（线程安全）。"""
