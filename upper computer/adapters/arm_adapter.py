@@ -57,8 +57,8 @@ class ArmAdapter:
         reconnect_interval: float = 5.0,
         on_connected: Callable[["ArmAdapter"], None] | None = None,
         on_disconnected: Callable[["ArmAdapter"], None] | None = None,
-        on_start_test: Callable[[str, str], None] | None = None,  # group, bitmask
-        on_data_received: Callable[[str], None] | None = None,  # 用于回显测试
+        on_start_test: Callable[[str, str], None] | None = None,  # DEPRECATED: 未使用
+        on_data_received: Callable[[str], None] | None = None,  # 原始数据回调（上层负责解析）
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         """初始化机械臂适配器。
@@ -72,8 +72,8 @@ class ArmAdapter:
             reconnect_interval: 重连间隔秒数（Client 模式，默认为 5.0）。
             on_connected: 机械臂连接成功回调。
             on_disconnected: 机械臂断开连接回调。
-            on_start_test: 收到 START_TEST 指令回调。
-            on_data_received: 收到任意数据回调（用于回显测试调试）。
+            on_start_test: 已弃用，请使用 on_data_received 替代。
+            on_data_received: 收到任意数据回调（由上层协议解析）。
             on_error: 错误发生回调。
         """
         self._host = host
@@ -272,6 +272,22 @@ class ArmAdapter:
 
         logger.info("重连线程退出")
 
+    def _start_reconnect(self) -> None:
+        """启动重连（安全调用，避免重复创建重连线程）。"""
+        with self._lock:
+            # 检查是否已有重连线程在运行
+            if self._reconnect_thread and self._reconnect_thread.is_alive():
+                logger.debug("重连线程已在运行，跳过")
+                return
+
+            self._stop_reconnect.clear()
+            self._reconnect_thread = threading.Thread(
+                target=self._reconnect_loop,
+                name="ArmAdapter-Reconnect",
+                daemon=True,
+            )
+            self._reconnect_thread.start()
+
     def stop(self) -> None:
         """停止适配器，断开所有连接。"""
         if not self._running:
@@ -322,6 +338,8 @@ class ArmAdapter:
     def send_test_done(self, group: str, error_codes: list[str]) -> bool:
         """向机械臂发送 TEST_DONE 指令。
 
+        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
+
         Args:
             group: 组号（2位十六进制）。
             error_codes: 8个错误码列表。
@@ -347,6 +365,8 @@ class ArmAdapter:
 
     def send_abort(self, error_code: str = "EEEE") -> bool:
         """向机械臂发送异常中止信号。
+
+        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
 
         Args:
             error_code: 错误码，默认为 "EEEE"。
@@ -478,8 +498,9 @@ class ArmAdapter:
             self._on_disconnected_internal()
 
             # Client 模式：触发重连
+            # 使用 _start_reconnect() 避免与现有的重连线程冲突
             if self._running and self._mode == ArmAdapterMode.CLIENT:
-                self._start_client_mode()
+                self._start_reconnect()
 
         logger.info("TCP Client 接收线程退出")
 

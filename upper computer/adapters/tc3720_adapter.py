@@ -126,20 +126,11 @@ class TC3720Adapter:
             logger.info("3720 模拟器已连接")
             return True
 
-        elif self._mode == "tcp":
-            raise NotImplementedError("TCP 模式尚未实现，请联系开发者配置真实设备")
-
-        elif self._mode == "serial":
-            raise NotImplementedError("串口模式尚未实现，请联系开发者配置真实设备")
-
-        elif self._mode == "io":
-            raise NotImplementedError("IO 模式尚未实现，请联系开发者配置真实设备")
-
-        elif self._mode == "simulator":
-            pass  # 模拟器模式由 start() 统一处理
-
-        else:
-            raise NotImplementedError(f"未知的通信模式: {self._mode}")
+        # 其他模式未实现
+        raise NotImplementedError(
+            f"模式 '{self._mode}' 尚未实现。当前仅支持 simulator 模式。"
+            "如需使用真实设备，请使用 TC3720TcpAdapter。"
+        )
 
     def disconnect(self) -> None:
         """断开与 3720 设备的连接。"""

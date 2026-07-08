@@ -1,13 +1,16 @@
 """
-信号路由层 - 透明中转网关。
+信号路由层 - 协议处理网关。
 
-实现机械臂与 3720 测试仪之间的纯数据透传，不做任何协议解析。
+实现机械臂与 3720 测试仪之间的通信协议处理：
+- 解析机械臂的 @START_TEST 指令
+- 向 3720 测试仪发送启动信号
+- 收集测试结果，组装 @TEST_DONE 返回给机械臂
 
 架构：
-  机械臂 <──串口──> 上位机 <──TCP──> 3720测试仪
+  机械臂 <──TCP/串口──> 网关 <──TCP──> 3720测试仪
                      ↓
-               纯数据透传
-               （日志记录）
+               协议解析与路由
+               （多设备并发管理）
 
 使用 threading 架构，确保线程安全。
 """
@@ -80,13 +83,14 @@ class GatewayConfig:
 
 
 class PassthroughGateway:
-    """透明中转网关。
+    """信号路由网关（协议处理模式）。
 
-    协议处理模式：
-    1. 接收机械臂的 @START_TEST 指令
+    工作流程：
+    1. 接收机械臂的 @START_TEST 指令（或主动触发测试）
     2. 解析 Bitmask，根据为 1 的位置找到对应 DUT 的 3720 IP
     3. 向对应的 3720 设备发送 START 信号
-    4. 收集测试结果，组装 @TEST_DONE 返回给机械臂
+    4. 等待所有设备测试完成
+    5. 收集错误码，组装 @TEST_DONE 返回给机械臂
 
     支持多设备：根据 Bitmask 中的 8 个位置，对应 8 个独立的 3720 测试仪。
     """
@@ -150,6 +154,10 @@ class PassthroughGateway:
     def is_arm_connected(self) -> bool:
         """机械臂是否已连接。"""
         return self._arm_adapter is not None and self._arm_adapter.is_connected
+
+    def clear_alarm(self) -> None:
+        """清除告警状态。"""
+        self._set_state(GatewayState.IDLE)
 
     @property
     def arm_client_address(self) -> str | None:
@@ -388,6 +396,17 @@ class PassthroughGateway:
         if self._on_arm_connected:
             self._on_arm_connected(False)
 
+    def on_start_test(self, group: str, bitmask: str) -> None:
+        """手动触发测试（供调试工具使用）。
+
+        模拟收到机械臂的 @START_TEST 指令，处理测试请求。
+
+        Args:
+            group: 组号。
+            bitmask: DUT 位掩码。
+        """
+        self._handle_start_test({"group": group, "bitmask": bitmask})
+
     def _on_arm_error(self, error: str) -> None:
         """机械臂错误回调。"""
         logger.error("机械臂通信错误: %s", error)
@@ -613,11 +632,27 @@ class PassthroughGateway:
     def _send_error_to_arm(self, error_msg: str) -> None:
         """发送错误信息给机械臂。
 
+        发送 group=FF 的 TEST_DONE 表示测试异常中止。
+
         Args:
             error_msg: 错误消息。
         """
         logger.error("[ARM-TX] 错误: %s", error_msg)
-        # 可以发送一个错误码为 EEEE 的 TEST_DONE 表示失败
+
+        if not self._arm_adapter:
+            logger.error("[ARM-TX] 机械臂未连接，无法发送错误响应")
+            return
+
+        # 发送异常中止信号（所有 DUT 标记为错误码 EEEE）
+        error_codes = ["EEEE"] * 8
+        response = ArmProtocol.build_test_done("FF", error_codes)
+
+        if hasattr(self._arm_adapter, 'send_raw'):
+            success = self._arm_adapter.send_raw(response)
+            if success:
+                logger.info("[ARM-TX] 已发送异常中止信号: %s", response)
+            else:
+                logger.error("[ARM-TX] 发送异常中止信号失败")
 
 
 # 保持向后兼容

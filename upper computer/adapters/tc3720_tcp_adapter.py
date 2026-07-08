@@ -52,7 +52,7 @@ class TC3720TcpAdapter:
         reconnect_interval: float = RECONNECT_INTERVAL,
         on_status_changed: Callable[[TC3720Status], None] | None = None,
         on_test_complete: Callable[[list[str]], None] | None = None,  # error_codes
-        on_data_received: Callable[[str], None] | None = None,  # 透传模式：原始数据回调
+        on_data_received: Callable[[str], None] | None = None,  # DEPRECATED: 原始数据回调（已不使用）
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         """初始化 3720 TCP 适配器。
@@ -63,7 +63,7 @@ class TC3720TcpAdapter:
             reconnect_interval: 重连间隔秒数。
             on_status_changed: 状态变化回调。
             on_test_complete: 测试完成回调（返回错误码列表）。
-            on_data_received: 原始数据接收回调（透传模式使用）。
+            on_data_received: 已弃用，无需使用。
             on_error: 错误发生回调。
         """
         self._host = host
@@ -85,8 +85,6 @@ class TC3720TcpAdapter:
         # 内部状态
         self._status = TC3720Status.OFFLINE
         self._pending_test = False  # 是否有待处理的测试
-        self._pending_group: str = ""
-        self._pending_bitmask: str = ""
         self._pending_timeout: float = 30.0
 
         # 读取缓冲区
@@ -325,6 +323,8 @@ class TC3720TcpAdapter:
     ) -> bool:
         """向 3720 发送启动测试指令。
 
+        DEPRECATED: 请使用 trigger_test() 替代。当前协议使用简化格式。
+
         Args:
             group: 组号。
             bitmask: DUT 位掩码（需要测试哪些 DUT）。
@@ -352,8 +352,6 @@ class TC3720TcpAdapter:
         # 保存待处理测试信息
         with self._lock:
             self._pending_test = True
-            self._pending_group = group
-            self._pending_bitmask = bitmask
             self._pending_timeout = timeout
 
         # 发送指令

@@ -40,6 +40,9 @@ class ArmProtocol:
     def build_start_test(cls, group: str, bitmask: str) -> str:
         """构建 START_TEST 指令。
 
+        ⚠️ 警告：此方法仅在被动监听模式下使用。
+        主动触发模式下，上位机不发送此指令，而是由机械臂自动发送。
+
         Args:
             group: 组号，2位十六进制数（如 '00'）。
             bitmask: 8位二进制字符串，从左至右对应 DUT #1 至 DUT #8。

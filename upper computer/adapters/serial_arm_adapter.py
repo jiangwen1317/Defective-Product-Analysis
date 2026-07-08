@@ -62,8 +62,8 @@ class SerialArmAdapter:
         timeout: float = DEFAULT_TIMEOUT,
         on_connected: Callable[["SerialArmAdapter"], None] | None = None,
         on_disconnected: Callable[["SerialArmAdapter"], None] | None = None,
-        on_start_test: Callable[[str, str], None] | None = None,  # group, bitmask
-        on_data_received: Callable[[str], None] | None = None,  # 用于回显测试
+        on_start_test: Callable[[str, str], None] | None = None,  # DEPRECATED: 未使用
+        on_data_received: Callable[[str], None] | None = None,  # 原始数据回调（上层负责解析）
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         """初始化串口适配器。
@@ -77,8 +77,8 @@ class SerialArmAdapter:
             timeout: 读取超时时间（秒）。
             on_connected: 串口打开成功回调。
             on_disconnected: 串口关闭回调。
-            on_start_test: 收到 START_TEST 指令回调。
-            on_data_received: 收到任意数据回调（用于回显测试调试）。
+            on_start_test: 已弃用，请使用 on_data_received 替代。
+            on_data_received: 收到任意数据回调（由上层协议解析）。
             on_error: 错误发生回调。
         """
         self._port = port
@@ -317,6 +317,8 @@ class SerialArmAdapter:
     def send_test_done(self, group: str, error_codes: list[str]) -> bool:
         """向机械臂发送 TEST_DONE 指令。
 
+        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
+
         Args:
             group: 组号（2位十六进制）。
             error_codes: 8个错误码列表。
@@ -344,6 +346,8 @@ class SerialArmAdapter:
 
     def send_abort(self, error_code: str = "EEEE") -> bool:
         """向机械臂发送异常中止信号。
+
+        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
 
         Args:
             error_code: 错误码，默认为 "EEEE"。

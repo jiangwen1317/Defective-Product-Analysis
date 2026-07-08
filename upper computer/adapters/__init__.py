@@ -7,8 +7,8 @@
 支持多种通信模式：
 - ArmAdapter: 机械臂 TCP Server/Client 模式
 - SerialArmAdapter: 机械臂串口模式
-- TC3720TcpAdapter: 3720 测试仪 TCP 模式
-- TC3720Adapter: 3720 测试仪模拟器模式
+- TC3720TcpAdapter: 3720 测试仪 TCP 模式（主要使用）
+- TC3720Adapter: 3720 测试仪模拟器模式（仅用于测试）
 """
 
 from .arm_adapter import ArmAdapter

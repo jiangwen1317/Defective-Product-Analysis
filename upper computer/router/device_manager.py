@@ -11,7 +11,7 @@
     bitmask_to_duts() → [1, 3]
          │
          ▼
-    DeviceManager.get_adapter(dut) → TC3720TcpAdapter
+    DeviceManager.start_test(dut_indices)
          │
          ▼
     向每个设备发送 START 信号
@@ -165,13 +165,13 @@ class DeviceManager:
         logger.info("初始化 DUT#%d: %s (%s:%d)", dut_index, name, ip, port)
 
         # 创建适配器
+        # 创建适配器（不传入 on_error，因为错误已在 on_test_complete 中处理）
         adapter = TC3720TcpAdapter(
             host=ip,
             port=port,
             reconnect_interval=5.0,
             on_status_changed=lambda s, di=dut_index: self._on_device_status(di, s),
             on_test_complete=lambda ec, di=dut_index, dn=name, ip_=ip, pt=port: self._on_device_test_complete(di, dn, ip_, pt, ec),
-            on_error=lambda e, di=dut_index: self._on_device_error(di, e),
         )
 
         with self._lock:
