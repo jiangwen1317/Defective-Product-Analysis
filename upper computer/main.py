@@ -21,7 +21,7 @@ from ui.main_window import main
 if __name__ == "__main__":
     # 配置日志
     logging.basicConfig(
-        level=logging.DEBUG,  # 临时启用 DEBUG 以诊断问题
+        level=logging.INFO,
         format="%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
         datefmt="%H:%M:%S",
         handlers=[
