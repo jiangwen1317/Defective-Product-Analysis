@@ -35,6 +35,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -49,7 +50,7 @@ from ui.components import (
     StatusIndicator,
     TestProgressPanel,
 )
-from config import get_gateway_config, get_ui_config, load_config
+from config import get_configured_dut_indices, get_gateway_config, get_ui_config, load_config
 from router import ErrorCode, GatewayState, SignalGateway, TransferRecord
 from ui.styles import (
     COLOR_ACCENT,
@@ -158,19 +159,30 @@ class MainWindow(QMainWindow):
         # 标题栏
         main_layout.addWidget(self._create_header())
 
-        # 内容区域 - 两栏布局
+        # 内容区域 - 两栏布局（响应式）
         content = QWidget()
         content_layout = QHBoxLayout(content)
         content_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_LG)
         content_layout.setSpacing(SPACING_LG)
 
-        # 左侧主测试区（固定宽度 380px）
+        # 左侧主测试区（最小380px，最大480px，窗口大时自动扩展）
         left_panel = self._create_left_panel()
-        left_panel.setFixedWidth(380)
-        content_layout.addWidget(left_panel)
+        left_panel.setMinimumWidth(380)
+        left_panel.setMaximumWidth(480)
+        # 使用 Preferred + Expanding 策略，让左侧在范围内弹性
+        left_policy = left_panel.sizePolicy()
+        left_policy.setHorizontalPolicy(QSizePolicy.Preferred)
+        left_policy.setHorizontalStretch(0)  # 不参与弹性拉伸
+        left_panel.setSizePolicy(left_policy)
 
-        # 右侧状态区（弹性拉伸）
+        # 右侧状态区（始终填满剩余空间）
         right_panel = self._create_right_panel()
+        right_policy = right_panel.sizePolicy()
+        right_policy.setHorizontalPolicy(QSizePolicy.Expanding)
+        right_policy.setHorizontalStretch(1)
+        right_panel.setSizePolicy(right_policy)
+
+        content_layout.addWidget(left_panel)
         content_layout.addWidget(right_panel, 1)
 
         main_layout.addWidget(content, 1)
@@ -284,7 +296,8 @@ class MainWindow(QMainWindow):
         test_progress_card = Card("测试进度")
         progress_layout = test_progress_card.content_layout()
 
-        self._test_progress_panel = TestProgressPanel()
+        configured_duts = get_configured_dut_indices(self._config)
+        self._test_progress_panel = TestProgressPanel(dut_indices=configured_duts)
         progress_layout.addWidget(self._test_progress_panel)
 
         layout.addWidget(test_progress_card)
@@ -301,44 +314,63 @@ class MainWindow(QMainWindow):
         layout = card.content_layout()
         layout.setSpacing(SPACING_SM)
 
+        # 获取已配置的 DUT 列表
+        self._configured_duts = get_configured_dut_indices(self._config)
+
         # 测试说明
-        desc_label = QLabel("选择要测试的 DUT 板子，点击按钮触发测试")
+        if self._configured_duts:
+            desc_text = f"选择要测试的板子（已配置 {len(self._configured_duts)} 个）"
+        else:
+            desc_text = "当前无板子配置，请在 config.json 中配置 DUT IP"
+        desc_label = QLabel(desc_text)
         desc_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
         layout.addWidget(desc_label)
 
-        # 板子复选框 - 使用简单的 HBoxLayout 代替 GridLayout
+        # 板子复选框 - 只显示已配置的 DUT，增加间距使其更清晰
         self._board_checkboxes: list[QCheckBox] = []
         checkbox_row1 = QHBoxLayout()
-        checkbox_row1.setSpacing(SPACING_SM)
+        checkbox_row1.setSpacing(SPACING_MD)  # 增加间距
         checkbox_row2 = QHBoxLayout()
-        checkbox_row2.setSpacing(SPACING_SM)
+        checkbox_row2.setSpacing(SPACING_MD)
 
-        for i in range(1, 9):
-            checkbox = QCheckBox(f"板子{i}")
-            checkbox.setChecked(i <= 2)  # 默认勾选前两个
-            checkbox.setStyleSheet(f"""
-                QCheckBox {{
-                    color: {COLOR_TEXT_PRIMARY};
-                    font-size: {FONT_SIZE_SM};
-                }}
-                QCheckBox::indicator {{
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 3px;
-                    border: 1px solid {COLOR_BORDER};
-                    background-color: {COLOR_BG_TERTIARY};
-                }}
-                QCheckBox::indicator:checked {{
-                    background-color: {COLOR_ACCENT};
-                    border-color: {COLOR_ACCENT};
-                }}
-            """)
+        checkbox_style = f"""
+            QCheckBox {{
+                color: {COLOR_TEXT_PRIMARY};
+                font-size: {FONT_SIZE_SM};
+                spacing: 6px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid {COLOR_BORDER};
+                background-color: {COLOR_BG_TERTIARY};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLOR_ACCENT};
+                border-color: {COLOR_ACCENT};
+            }}
+            QCheckBox::indicator:checked:hover {{
+                background-color: {COLOR_ACCENT_HOVER};
+                border-color: {COLOR_ACCENT_HOVER};
+            }}
+        """
+
+        for i, dut_index in enumerate(self._configured_duts):
+            checkbox = QCheckBox(f"板子{dut_index}")
+            # 默认勾选所有已配置的 DUT
+            checkbox.setChecked(True)
+            checkbox.setStyleSheet(checkbox_style)
             self._board_checkboxes.append(checkbox)
-            if i <= 4:
+            # 每行最多 4 个
+            if i < 4:
                 checkbox_row1.addWidget(checkbox)
             else:
                 checkbox_row2.addWidget(checkbox)
 
+        # 添加弹性空间使复选框居中
+        checkbox_row1.addStretch()
+        checkbox_row1.insertStretch(0)
         layout.addLayout(checkbox_row1)
         layout.addLayout(checkbox_row2)
 
@@ -346,17 +378,17 @@ class MainWindow(QMainWindow):
         quick_btn_row = QHBoxLayout()
         quick_btn_row.setSpacing(SPACING_SM)
 
-        select_all_btn = QPushButton("全选")
-        select_all_btn.setFixedSize(56, 26)
+        # 动态调整按钮文字和宽度
+        dut_count = len(self._configured_duts)
+        select_all_text = f"全选({dut_count})"
+        # 根据文字长度调整按钮宽度
+        btn_width = max(70, len(select_all_text) * 14 + 20)
+
+        select_all_btn = QPushButton(select_all_text)
+        select_all_btn.setFixedSize(btn_width, 26)
         select_all_btn.setStyleSheet(secondary_button_style())
         select_all_btn.clicked.connect(self._on_select_all_boards)
         quick_btn_row.addWidget(select_all_btn)
-
-        board1_2_btn = QPushButton("前两个")
-        board1_2_btn.setFixedSize(56, 26)
-        board1_2_btn.setStyleSheet(secondary_button_style())
-        board1_2_btn.clicked.connect(self._on_select_board1_2)
-        quick_btn_row.addWidget(board1_2_btn)
 
         clear_btn = QPushButton("清空")
         clear_btn.setFixedSize(56, 26)
@@ -474,7 +506,9 @@ class MainWindow(QMainWindow):
         dut_card = Card("DUT 状态监控")
         dut_layout = dut_card.content_layout()
 
-        self._dut_grid_panel = DutGridPanel()
+        # 只显示已配置的 DUT
+        configured_duts = get_configured_dut_indices(self._config)
+        self._dut_grid_panel = DutGridPanel(dut_indices=configured_duts)
         dut_layout.addWidget(self._dut_grid_panel)
 
         layout.addWidget(dut_card)
@@ -841,7 +875,7 @@ class MainWindow(QMainWindow):
             self._log("错误", "发送触发命令失败")
 
     def _on_select_all_boards(self) -> None:
-        """全选所有板子。"""
+        """全选所有已配置的板子。"""
         for checkbox in self._board_checkboxes:
             checkbox.setChecked(True)
 
@@ -849,11 +883,6 @@ class MainWindow(QMainWindow):
         """清空所有板子选择。"""
         for checkbox in self._board_checkboxes:
             checkbox.setChecked(False)
-
-    def _on_select_board1_2(self) -> None:
-        """只选择前两个板子。"""
-        for i, checkbox in enumerate(self._board_checkboxes):
-            checkbox.setChecked(i < 2)
 
     def _on_gateway_state_changed(self, state: GatewayState) -> None:
         """网关状态变化回调（线程安全）。"""

@@ -204,3 +204,31 @@ def get_ui_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         config = load_config()
 
     return config.get("ui", DEFAULT_CONFIG["ui"])
+
+
+def get_configured_dut_indices(config: dict[str, Any] | None = None) -> list[int]:
+    """获取已配置的 DUT 编号列表。
+
+    IP 非空的 DUT 视为已配置。按编号从小到大排序返回。
+
+    Args:
+        config: 配置字典。为 None 时自动加载配置文件。
+
+    Returns:
+        已配置的 DUT 编号列表，如 [1, 2]。
+    """
+    if config is None:
+        config = load_config()
+
+    configured = []
+    devices = config.get("devices", {})
+
+    for i in range(1, 9):
+        dut_key = f"dut{i}"
+        dut_config = devices.get(dut_key, {})
+        ip = dut_config.get("ip", "")
+
+        if ip and ip.strip():
+            configured.append(i)
+
+    return configured

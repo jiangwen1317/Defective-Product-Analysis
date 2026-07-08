@@ -505,15 +505,26 @@ class InfoRow(QWidget):
 class DutGridPanel(QWidget):
     """DUT 状态网格面板。
 
-    以 2×4 网格形式显示 8 个 DUT 的状态，每个 DUT 显示编号和状态。
+    以网格形式显示已配置 DUT 的状态，每个 DUT 显示编号和状态。
+    默认显示全部 8 个 DUT，可通过 dut_indices 参数指定显示哪些。
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化 DUT 网格面板。"""
+    def __init__(
+        self,
+        dut_indices: list[int] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        """初始化 DUT 网格面板。
+
+        Args:
+            dut_indices: 要显示的 DUT 编号列表。默认为 [1,2,3,4,5,6,7,8]。
+            parent: 父部件。
+        """
         super().__init__(parent)
         self._dut_widgets: dict[int, QFrame] = {}
         self._dut_status_labels: dict[int, QLabel] = {}
         self._dut_indicators: dict[int, StatusIndicator] = {}
+        self._dut_indices = dut_indices if dut_indices is not None else list(range(1, 9))
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -522,14 +533,23 @@ class DutGridPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACING_MD)
 
-        # 创建 2×4 网格
-        for row in range(2):
+        # 根据 dut_indices 动态创建网格
+        # 2 行布局，每行最多 4 个
+        row1_indices = [d for d in self._dut_indices if self._dut_indices.index(d) < 4]
+        row2_indices = [d for d in self._dut_indices if self._dut_indices.index(d) >= 4]
+
+        for row_indices in [row1_indices, row2_indices]:
+            if not row_indices:
+                continue
             row_layout = QHBoxLayout()
-            row_layout.setSpacing(SPACING_SM)
+            # 根据格子数量增加间距，格子少时间距更大
+            if len(row_indices) <= 2:
+                row_layout.setSpacing(SPACING_LG)
+            else:
+                row_layout.setSpacing(SPACING_SM)
             row_layout.addStretch()  # 居中效果
 
-            for col in range(4):
-                dut_index = row * 4 + col + 1  # 1-8
+            for dut_index in row_indices:
                 dut_frame = self._create_dut_item(dut_index)
                 self._dut_widgets[dut_index] = dut_frame
                 row_layout.addWidget(dut_frame)
@@ -652,8 +672,8 @@ class DutGridPanel(QWidget):
         status_label.setStyleSheet(f"color: {text_color}; font-size: {FONT_SIZE_XS};")
 
     def reset_all(self) -> None:
-        """重置所有 DUT 状态为离线。"""
-        for dut_index in range(1, 9):
+        """重置所有显示的 DUT 状态为离线。"""
+        for dut_index in self._dut_indices:
             self.set_dut_status(dut_index, "offline")
 
 
@@ -661,12 +681,23 @@ class TestProgressPanel(QWidget):
     """测试进度面板。
 
     显示测试进度、各 DUT 结果和统计信息。
+    默认显示全部 8 个 DUT，可通过 dut_indices 参数指定显示哪些。
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """初始化测试进度面板。"""
+    def __init__(
+        self,
+        dut_indices: list[int] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        """初始化测试进度面板。
+
+        Args:
+            dut_indices: 要显示的 DUT 编号列表。默认为 [1,2,3,4,5,6,7,8]。
+            parent: 父部件。
+        """
         super().__init__(parent)
-        self._dut_results: dict[int, str] = {i: "-" for i in range(1, 9)}
+        self._dut_indices = dut_indices if dut_indices is not None else list(range(1, 9))
+        self._dut_results: dict[int, str] = {i: "-" for i in self._dut_indices}
         self._result_labels: dict[int, QLabel] = {}
         self._is_testing = False
         self._setup_ui()
@@ -713,20 +744,26 @@ class TestProgressPanel(QWidget):
         self._progress_bar.setValue(0)
         layout.addWidget(self._progress_bar)
 
-        # 结果行（8个 DUT 的结果）
+        # 结果行（根据 dut_indices 显示）
         results_layout = QHBoxLayout()
-        results_layout.setSpacing(SPACING_XS)
+        # 根据数量调整间距
+        if len(self._dut_indices) <= 2:
+            results_layout.setSpacing(SPACING_LG)
+        else:
+            results_layout.setSpacing(SPACING_XS)
+        # 添加起始弹性空间保持居中
+        results_layout.addStretch()
 
-        for i in range(1, 9):
+        for dut_index in self._dut_indices:
             result_label = QLabel("-")
             result_label.setFixedWidth(36)
             result_label.setAlignment(Qt.AlignCenter)
             result_label.setStyleSheet(f"""
                 color: {COLOR_TEXT_MUTED};
-                font-size: {FONT_SIZE_XS};
+                font-size: {FONT_SIZE_SM};
                 font-family: {FONT_MONO};
             """)
-            self._result_labels[i] = result_label
+            self._result_labels[dut_index] = result_label
             results_layout.addWidget(result_label)
 
         results_layout.addStretch()
@@ -747,11 +784,11 @@ class TestProgressPanel(QWidget):
         self._status_label.setStyleSheet(f"color: {COLOR_PROCESSING}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
 
         # 重置结果
-        for i in range(1, 9):
-            self._dut_results[i] = "-"
-            if i in self._result_labels:
-                self._result_labels[i].setText("-")
-                self._result_labels[i].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
+        for dut_index in self._dut_indices:
+            self._dut_results[dut_index] = "-"
+            if dut_index in self._result_labels:
+                self._result_labels[dut_index].setText("-")
+                self._result_labels[dut_index].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
 
         # 重置进度条
         self._progress_bar.setValue(0)
@@ -792,7 +829,7 @@ class TestProgressPanel(QWidget):
 
         # 更新进度
         completed = sum(1 for r in self._dut_results.values() if r != "-")
-        total = 8
+        total = len(self._dut_indices)
         if total > 0:
             self._progress_bar.setValue(int(completed / total * 100))
 
@@ -807,7 +844,7 @@ class TestProgressPanel(QWidget):
 
         # 计算通过率
         passed = sum(1 for code in results.values() if code == "0000")
-        total = len(results)
+        total = len(results) if results else len(self._dut_indices)
         rate = (passed / total * 100) if total > 0 else 0
 
         if rate == 100:
@@ -863,8 +900,8 @@ class TestProgressPanel(QWidget):
         self._status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
         self._progress_bar.setValue(0)
 
-        for i in range(1, 9):
-            self._dut_results[i] = "-"
-            if i in self._result_labels:
-                self._result_labels[i].setText("-")
-                self._result_labels[i].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
+        for dut_index in self._dut_indices:
+            self._dut_results[dut_index] = "-"
+            if dut_index in self._result_labels:
+                self._result_labels[dut_index].setText("-")
+                self._result_labels[dut_index].setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS}; font-family: {FONT_MONO};")
