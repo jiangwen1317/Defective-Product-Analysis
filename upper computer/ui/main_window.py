@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
         self._tc3720_connection: ConnectionStatus | None = None
         self._alarm_card: Card | None = None
         self._task_group_label: QLabel | None = None
+        self._dut_connections: dict[int, ConnectionStatus] = {}  # DUT 状态字典
 
         # 窗口初始化
         self._init_ui()
@@ -285,6 +286,30 @@ class MainWindow(QMainWindow):
         conn_layout.addWidget(self._tc3720_connection)
 
         layout.addWidget(conn_card)
+
+        # 多 DUT 状态卡片
+        dut_card = Card("DUT 状态")
+        dut_layout = dut_card.content_layout()
+
+        # 8 个 DUT 的状态指示器（2行4列布局）
+        dut_container = QWidget()
+        dut_grid = QHBoxLayout(dut_container)
+        dut_grid.setContentsMargins(0, 0, 0, 0)
+        dut_grid.setSpacing(SPACING_SM)
+
+        # 每行 4 个 DUT
+        for row in range(2):
+            dut_column = QVBoxLayout()
+            dut_column.setSpacing(SPACING_XS)
+            for col in range(4):
+                dut_index = row * 4 + col + 1  # 1-8
+                dut_status = ConnectionStatus(f"DUT#{dut_index}")
+                self._dut_connections[dut_index] = dut_status
+                dut_column.addWidget(dut_status)
+            dut_grid.addLayout(dut_column)
+
+        dut_layout.addWidget(dut_container)
+        layout.addWidget(dut_card)
 
         # 网关配置卡片
         config_card = Card("网关配置")
@@ -825,6 +850,7 @@ class MainWindow(QMainWindow):
             on_state_changed=self._on_gateway_state_changed,
             on_arm_connected=self._on_arm_connected,
             on_3720_status_changed=self._on_3720_status_changed,
+            on_dut_status_changed=self._on_dut_status_changed,  # 单个 DUT 状态回调
             on_record=self._on_transfer_record,
             on_error=self._on_gateway_error,
         )
@@ -914,6 +940,9 @@ class MainWindow(QMainWindow):
         # 重置显示
         self._arm_connection.set_status("offline")
         self._tc3720_connection.set_status("offline")
+        # 重置所有 DUT 状态为离线
+        for dut_status in self._dut_connections.values():
+            dut_status.set_status("offline")
         self._reset_flow_display()
 
     def _reset_flow_display(self) -> None:
@@ -1102,6 +1131,36 @@ class MainWindow(QMainWindow):
         }
 
         self._tc3720_connection.set_status(status_map.get(status, "offline"))
+
+    def _on_dut_status_changed(self, dut_index: int, status: TC3720Status) -> None:
+        """单个 DUT 状态变化回调（线程安全）。
+
+        Args:
+            dut_index: DUT 编号 (1-8)。
+            status: 新状态。
+        """
+        # 通过 QTimer.singleShot(0, ...) 确保在主线程执行
+        QTimer.singleShot(0, lambda di=dut_index, s=status: self._update_dut_display_safe(di, s))
+
+    def _update_dut_display_safe(self, dut_index: int, status: TC3720Status) -> None:
+        """更新单个 DUT 显示（主线程安全）。
+
+        Args:
+            dut_index: DUT 编号 (1-8)。
+            status: 新状态。
+        """
+        # 检查控件是否已初始化
+        if not self._dut_connections or dut_index not in self._dut_connections:
+            return
+
+        status_map = {
+            TC3720Status.OFFLINE: "offline",
+            TC3720Status.IDLE: "online",
+            TC3720Status.TESTING: "testing",
+            TC3720Status.ERROR: "error",
+        }
+
+        self._dut_connections[dut_index].set_status(status_map.get(status, "offline"))
 
     def _on_transfer_record(self, record: TransferRecord) -> None:
         """中转记录回调（线程安全）。

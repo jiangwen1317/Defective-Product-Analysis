@@ -101,6 +101,7 @@ class PassthroughGateway:
         on_state_changed: Callable[[GatewayState], None] | None = None,
         on_arm_connected: Callable[[bool], None] | None = None,
         on_3720_status_changed: Callable[[TC3720Status], None] | None = None,
+        on_dut_status_changed: Callable[[int, TC3720Status], None] | None = None,  # 新增：每个 DUT 的状态
         on_record: Callable[[TransferRecord], None] | None = None,
         on_raw_data: Callable[[str, str], None] | None = None,  # direction, data
         on_error: Callable[[ErrorCode, str], None] | None = None,
@@ -111,7 +112,8 @@ class PassthroughGateway:
             config: 网关配置。
             on_state_changed: 状态变化回调。
             on_arm_connected: 机械臂连接状态变化回调。
-            on_3720_status_changed: 3720 状态变化回调。
+            on_3720_status_changed: 3720 聚合状态变化回调。
+            on_dut_status_changed: 单个 DUT 状态变化回调 (dut_index, status)。
             on_record: 中转记录回调。
             on_raw_data: 原始数据回调（direction: "arm_to_3720" 或 "3720_to_arm"）。
             on_error: 错误发生回调。
@@ -120,6 +122,7 @@ class PassthroughGateway:
         self._on_state_changed = on_state_changed
         self._on_arm_connected = on_arm_connected
         self._on_3720_status_changed = on_3720_status_changed
+        self._on_dut_status_changed = on_dut_status_changed
         self._on_record = on_record
         self._on_raw_data = on_raw_data
         self._on_error = on_error
@@ -634,6 +637,11 @@ class PassthroughGateway:
         """
         logger.debug("DUT#%d 状态变化: %s", dut_index, status.value)
 
+        # 调用单个 DUT 状态回调
+        if self._on_dut_status_changed:
+            self._on_dut_status_changed(dut_index, status)
+
+        # 调用聚合状态回调
         if self._on_3720_status_changed:
             # 聚合状态：只要有设备在测试就返回 TESTING
             if status == TC3720Status.TESTING:
