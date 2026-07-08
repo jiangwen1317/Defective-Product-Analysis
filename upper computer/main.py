@@ -10,11 +10,13 @@ v2.0 主动触发模式中转网关。
 """
 
 import logging
+import os
 import sys
+import warnings
 
 # 抑制 libpng 警告（Pillow/PyQt5 加载 PNG 时的元数据警告）
-import os
 os.environ["PIL_SUPPRESS_LIBPNG_WARNS"] = "1"
+warnings.filterwarnings("ignore", message=".*iCCP.*")
 
 from ui.main_window import main
 
