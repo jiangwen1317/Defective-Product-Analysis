@@ -557,7 +557,11 @@ class TC3720TcpAdapter:
             else:
                 break
 
+            # 移除所有不可打印字符（包括 \x00, \r, \n, 空格等）
             line = line.strip()
+            # 额外移除 \x00 等 NULL 字符
+            line = line.strip("\x00").strip()
+
             if not line:
                 continue
 
@@ -583,6 +587,9 @@ class TC3720TcpAdapter:
             line: 响应行。
         """
         line = line.strip()
+        # 额外移除 \x00 等 NULL 字符
+        line = line.strip("\x00").strip()
+
         if not line:
             return
 

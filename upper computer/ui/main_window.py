@@ -26,6 +26,7 @@ if str(_project_root) not in sys.path:
 from PyQt5.QtCore import QEvent, Qt, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -606,6 +607,104 @@ class MainWindow(QMainWindow):
         trigger_desc.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
         debug_layout.addWidget(trigger_desc)
 
+        # 板子选择区域
+        board_label = QLabel("选择要测试的板子:")
+        board_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
+        debug_layout.addWidget(board_label)
+
+        # 板子复选框（最多支持8个板子）
+        self._board_checkboxes: list[QCheckBox] = []
+        board_row = QHBoxLayout()
+        board_row.setSpacing(SPACING_MD)
+
+        # 默认勾选前两个板子
+        for i in range(1, 9):
+            checkbox = QCheckBox(f"板子{i}")
+            checkbox.setChecked(i <= 2)  # 默认勾选前两个
+            checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {COLOR_TEXT_PRIMARY};
+                    font-size: {FONT_SIZE_SM};
+                }}
+                QCheckBox::indicator {{
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 3px;
+                    border: 1px solid {COLOR_BORDER};
+                    background-color: {COLOR_BG_TERTIARY};
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {COLOR_ACCENT};
+                    border-color: {COLOR_ACCENT};
+                }}
+            """)
+            self._board_checkboxes.append(checkbox)
+            board_row.addWidget(checkbox)
+
+        board_row.addStretch()
+        debug_layout.addLayout(board_row)
+
+        # 快捷按钮行
+        quick_btn_row = QHBoxLayout()
+        quick_btn_row.setSpacing(SPACING_SM)
+
+        # 全选按钮
+        select_all_btn = QPushButton("全选")
+        select_all_btn.setFixedSize(60, 28)
+        select_all_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_BG_TERTIARY};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_SM};
+                font-size: {FONT_SIZE_XS};
+            }}
+            QPushButton:hover {{
+                background-color: {COLOR_BORDER};
+            }}
+        """)
+        select_all_btn.clicked.connect(self._on_select_all_boards)
+        quick_btn_row.addWidget(select_all_btn)
+
+        # 清空按钮
+        clear_btn = QPushButton("清空")
+        clear_btn.setFixedSize(60, 28)
+        clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_BG_TERTIARY};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_SM};
+                font-size: {FONT_SIZE_XS};
+            }}
+            QPushButton:hover {{
+                background-color: {COLOR_BORDER};
+            }}
+        """)
+        clear_btn.clicked.connect(self._on_clear_all_boards)
+        quick_btn_row.addWidget(clear_btn)
+
+        # 前两个按钮
+        board1_2_btn = QPushButton("前两个")
+        board1_2_btn.setFixedSize(60, 28)
+        board1_2_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_BG_TERTIARY};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_SM};
+                font-size: {FONT_SIZE_XS};
+            }}
+            QPushButton:hover {{
+                background-color: {COLOR_BORDER};
+            }}
+        """)
+        board1_2_btn.clicked.connect(self._on_select_board1_2)
+        quick_btn_row.addWidget(board1_2_btn)
+
+        quick_btn_row.addStretch()
+        debug_layout.addLayout(quick_btn_row)
+
         # 触发测试按钮
         trigger_btn = QPushButton("▶ 主动触发测试")
         trigger_btn.setFixedHeight(36)
@@ -849,13 +948,39 @@ class MainWindow(QMainWindow):
             self._log("错误", "机械臂未连接，无法触发测试")
             return
 
+        # 获取用户选择的板子列表
+        selected_boards = []
+        for i, checkbox in enumerate(self._board_checkboxes, start=1):
+            if checkbox.isChecked():
+                selected_boards.append(i)
+
+        if not selected_boards:
+            self._log("错误", "请至少选择一个板子")
+            return
+
         # 发送触发命令
-        success = self._gateway.trigger_test()
+        success = self._gateway.trigger_test(boards_to_test=selected_boards)
 
         if success:
-            self._log("触发", "已发送 @TEST_DONE 触发命令，等待机械臂响应...")
+            boards_str = "、".join([f"板子{i}" for i in selected_boards])
+            self._log("触发", f"已发送 @TEST_DONE 触发命令（测试 {boards_str}），等待机械臂响应...")
         else:
             self._log("错误", "发送触发命令失败")
+
+    def _on_select_all_boards(self) -> None:
+        """全选所有板子。"""
+        for checkbox in self._board_checkboxes:
+            checkbox.setChecked(True)
+
+    def _on_clear_all_boards(self) -> None:
+        """清空所有板子选择。"""
+        for checkbox in self._board_checkboxes:
+            checkbox.setChecked(False)
+
+    def _on_select_board1_2(self) -> None:
+        """只选择前两个板子。"""
+        for i, checkbox in enumerate(self._board_checkboxes):
+            checkbox.setChecked(i < 2)
 
     def _on_inject_test_signal(self) -> None:
         """注入测试信号（调试用）。"""

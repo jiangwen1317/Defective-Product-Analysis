@@ -197,11 +197,14 @@ class PassthroughGateway:
             size=len(raw_data),
         )
 
-    def trigger_test(self) -> bool:
+    def trigger_test(self, boards_to_test: list[int] | None = None) -> bool:
         """主动触发测试。
 
         向上位机发送 @TEST_DONE 命令，触发机械臂开始测试流程。
         机械臂收到后会发送 @START_TEST 指令，上位机随后处理测试请求。
+
+        Args:
+            boards_to_test: 要测试的板子编号列表（1-8），默认为 [1, 2]。
 
         Returns:
             触发命令发送是否成功。
@@ -215,7 +218,7 @@ class PassthroughGateway:
             return False
 
         # 构建触发命令
-        trigger_cmd = ArmProtocol.build_trigger()
+        trigger_cmd = ArmProtocol.build_trigger(boards_to_test=boards_to_test)
 
         # 发送触发命令
         if hasattr(self._arm_adapter, 'send_raw'):

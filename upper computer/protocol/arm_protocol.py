@@ -18,7 +18,8 @@ class ArmProtocol:
     负责指令的构建、验证与解析。
 
     通信流程（主动模式）：
-    1. 上位机发送 @TEST_DONE 触发机械臂开始测试
+    1. 上位机发送 @TEST_DONE 00 <EC1> <EC2> ... <EC8>+ 触发机械臂
+       - EC 字段为 "0001" 表示该位置有数据需要测试，"0000" 表示不测试
     2. 机械臂收到后，发送 @START_TEST 00 <bitmask>+ 启动测试
     3. 3720 测试完成后返回 ErrorCode: XXXX
     4. 上位机组装 @TEST_DONE 返回给机械臂
@@ -141,6 +142,16 @@ class ArmProtocol:
 
         if not raw:
             return None
+
+        # 容错处理：跳过帧首前的异常字符（如 \x00）
+        if not raw.startswith("@"):
+            at_pos = raw.find("@")
+            if at_pos > 0:
+                logger.debug("跳过帧首前 %d 个异常字符: %r", at_pos, raw[:at_pos])
+                raw = raw[at_pos:]
+            elif at_pos == -1:
+                logger.warning("指令格式错误：缺少帧首 '@' %r", raw)
+                return None
 
         # 验证帧首尾标识
         if not raw.startswith("@") or not raw.endswith("+"):
@@ -302,16 +313,32 @@ class ArmProtocol:
         return "".join("1" if i in duts else "0" for i in range(1, 9))
 
     @classmethod
-    def build_trigger(cls) -> str:
-        """构建触发命令。
+    def build_trigger(cls, boards_to_test: list[int] | None = None) -> str:
+        """构建触发命令，通知机械臂开始测试。
 
         上位机发送此命令触发机械臂开始测试流程。
         机械臂收到后会发送 @START_TEST 指令。
 
+        协议规定：EC 字段为 "0001" 表示该位置有数据需要测试，
+        "0000" 表示该位置无数据（不测试）。
+
+        Args:
+            boards_to_test: 要测试的板子编号列表（1-8），默认为 [1, 2]（测试前两个板子）。
+
         Returns:
-            触发命令字符串: @TEST_DONE+
+            触发命令字符串，格式为：
+            - 测试板子1和2: @TEST_DONE 00 0001 0001 0000 0000 0000 0000 0000 0000+
+            - 只测试板子1: @TEST_DONE 00 0001 0000 0000 0000 0000 0000 0000 0000+
+            - 测试板子1和3: @TEST_DONE 00 0001 0000 0001 0000 0000 0000 0000 0000+
         """
-        return f"{cls.CMD_DONE}{cls.CMD_TERMINATOR}"
+        if boards_to_test is None:
+            boards_to_test = [1, 2]  # 默认测试前两个板子
+
+        error_codes = []
+        for i in range(1, 9):
+            error_codes.append("0001" if i in boards_to_test else "0000")
+
+        return f"{cls.CMD_DONE} 00 {' '.join(error_codes)}{cls.CMD_TERMINATOR}"
 
     @classmethod
     def parse_error_code_response(cls, raw: str) -> str | None:
