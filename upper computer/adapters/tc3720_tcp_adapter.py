@@ -96,6 +96,8 @@ class TC3720TcpAdapter:
         # 重连线程
         self._reconnect_thread: threading.Thread | None = None
         self._stop_reconnect = threading.Event()
+        self._reconnecting = False  # 标记是否正在重连
+        self._reconnect_lock = threading.Lock()  # 重连操作专用锁
 
     @property
     def host(self) -> str:
@@ -226,24 +228,28 @@ class TC3720TcpAdapter:
 
     def _reconnect_loop(self) -> None:
         """重连循环。"""
-        while self._running and not self._stop_reconnect.is_set():
-            if self._do_connect():
-                # 连接成功，启动接收线程
-                self._thread = threading.Thread(
-                    target=self._run_receive_loop,
-                    name=f"TC3720-Receive-{self._host}:{self._port}",
-                    daemon=True,
-                )
-                self._thread.start()
-                return
-
-            # 等待重连间隔
-            for _ in range(int(self._reconnect_interval * 10)):
-                if self._stop_reconnect.is_set() or not self._running:
+        try:
+            while self._running and not self._stop_reconnect.is_set():
+                if self._do_connect():
+                    # 连接成功，启动接收线程
+                    self._thread = threading.Thread(
+                        target=self._run_receive_loop,
+                        name=f"TC3720-Receive-{self._host}:{self._port}",
+                        daemon=True,
+                    )
+                    self._thread.start()
                     return
-                time.sleep(0.1)
 
-        logger.info("3720 重连线程退出")
+                # 等待重连间隔
+                for _ in range(int(self._reconnect_interval * 10)):
+                    if self._stop_reconnect.is_set() or not self._running:
+                        return
+                    time.sleep(0.1)
+        finally:
+            # 重置重连标志
+            with self._reconnect_lock:
+                self._reconnecting = False
+            logger.info("3720 重连线程退出")
 
     def disconnect(self) -> None:
         """断开与 3720 设备的连接。"""
@@ -712,10 +718,24 @@ class TC3720TcpAdapter:
         logger.info("3720 连接已断开")
 
     def _start_reconnect(self) -> None:
-        """启动重连。"""
-        self._reconnect_thread = threading.Thread(
-            target=self._reconnect_loop,
-            name="TC3720-Reconnect",
-            daemon=True,
-        )
-        self._reconnect_thread.start()
+        """启动重连（线程安全，确保只有一个重连线程）。"""
+        with self._reconnect_lock:
+            # 检查是否已经有重连线程在运行
+            if self._reconnecting:
+                logger.debug("重连线程已在运行，跳过")
+                return
+
+            # 检查现有线程是否还活着
+            if self._reconnect_thread and self._reconnect_thread.is_alive():
+                logger.debug("重连线程仍在运行，跳过")
+                return
+
+            self._reconnecting = True
+            self._stop_reconnect.clear()
+
+            self._reconnect_thread = threading.Thread(
+                target=self._reconnect_loop,
+                name="TC3720-Reconnect",
+                daemon=True,
+            )
+            self._reconnect_thread.start()

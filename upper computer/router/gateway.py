@@ -128,9 +128,13 @@ class PassthroughGateway:
         self._arm_adapter = None
         self._device_manager = None
 
-        # 测试结果收集（等待所有设备返回结果）
-        self._test_results: dict[int, str] = {}  # dut_index -> error_code
+        # 测试结果收集（事件驱动）
+        self._test_results: dict[int, str | None] = {}  # dut_index -> error_code (None=未完成)
         self._test_lock = threading.Lock()
+        self._test_complete_event = threading.Event()  # 所有测试完成事件
+
+        # 机械臂数据接收缓冲区（用于处理分片数据）
+        self._arm_buffer: str = ""
 
         # 内部状态
         self._state = GatewayState.IDLE
@@ -446,19 +450,51 @@ class PassthroughGateway:
         if self._on_raw_data:
             self._on_raw_data("arm_to_3720", data)
 
-        # 尝试解析为协议指令
-        result = ArmProtocol.parse_command(data)
-        if result is None:
-            logger.warning("[ARM-RX] 无法解析指令: %r", data)
-            return
+        # 使用缓冲区处理分片数据
+        self._arm_buffer += data
+        logger.debug("[ARM-RX] 缓冲区累积: %d 字节", len(self._arm_buffer))
 
-        cmd_type, params = result
-        logger.info("[ARM-RX] 解析指令: %s, 参数: %s", cmd_type, params)
+        # 提取完整帧（以 '@' 开头，以 '+' 结尾）
+        while True:
+            # 先找到 '@' 的位置
+            at_pos = self._arm_buffer.find("@")
+            if at_pos == -1:
+                # 没有 '@'，可能是非协议数据，清空缓冲区
+                self._arm_buffer = ""
+                break
 
-        if cmd_type == "START_TEST":
-            self._handle_start_test(params)
-        else:
-            logger.warning("[ARM-RX] 不支持的指令类型: %s", cmd_type)
+            # 去掉 '@' 之前的内容
+            if at_pos > 0:
+                logger.debug("[ARM-RX] 跳过 '@' 前内容: %r", self._arm_buffer[:at_pos])
+                self._arm_buffer = self._arm_buffer[at_pos:]
+
+            # 再找 '+' 的位置
+            plus_pos = self._arm_buffer.find("+")
+            if plus_pos == -1:
+                # 没有 '+'，帧不完整，等待更多数据
+                break
+
+            # 提取完整帧
+            frame = self._arm_buffer[:plus_pos + 1]
+            self._arm_buffer = self._arm_buffer[plus_pos + 1:]
+            logger.debug("[ARM-RX] 提取帧: %r", frame)
+
+            if not frame.startswith("@") or frame == "+":
+                continue
+
+            # 尝试解析为协议指令
+            result = ArmProtocol.parse_command(frame)
+            if result is None:
+                logger.warning("[ARM-RX] 帧解析失败: %r", frame)
+                continue
+
+            cmd_type, params = result
+            logger.info("[ARM-RX] 解析指令: %s, 参数: %s", cmd_type, params)
+
+            if cmd_type == "START_TEST":
+                self._handle_start_test(params)
+            else:
+                logger.warning("[ARM-RX] 不支持的指令类型: %s", cmd_type)
 
     def _handle_start_test(self, params: dict) -> None:
         """处理 START_TEST 指令。
@@ -518,17 +554,12 @@ class PassthroughGateway:
                 for dut_idx in failed_duts:
                     self._test_results[dut_idx] = "EEEE"
 
-        # 等待所有测试完成
+        # 事件驱动等待：等待所有测试完成或超时
         timeout = self._config.test_timeout * 2  # 使用较长的超时时间
-        start_time = time.time()
-        check_interval = 0.1  # 每 100ms 检查一次
+        self._test_complete_event.clear()
 
-        while time.time() - start_time < timeout:
-            with self._test_lock:
-                # 检查是否所有 DUT 都返回了结果
-                if all(code is not None for code in self._test_results.values()):
-                    break
-            time.sleep(check_interval)
+        # 等待事件触发或超时
+        completed = self._test_complete_event.wait(timeout=timeout)
 
         # 收集结果
         with self._test_lock:
@@ -563,9 +594,16 @@ class PassthroughGateway:
         logger.info("[3720-RX] DUT#%d 测试完成，错误码: %s",
                    result.dut_index, result.error_code)
 
+        all_complete = False
         with self._test_lock:
             if result.dut_index in self._test_results:
                 self._test_results[result.dut_index] = result.error_code
+                # 检查是否所有 DUT 都返回了结果
+                all_complete = all(code is not None for code in self._test_results.values())
+
+        # 如果所有测试完成，触发事件
+        if all_complete:
+            self._test_complete_event.set()
 
     def _on_device_error(self, dut_index: int, error_msg: str) -> None:
         """设备错误回调。
@@ -576,9 +614,16 @@ class PassthroughGateway:
         """
         logger.error("[3720-ERR] DUT#%d 错误: %s", dut_index, error_msg)
 
+        all_complete = False
         with self._test_lock:
             if dut_index in self._test_results:
                 self._test_results[dut_index] = "EEEE"
+                # 检查是否所有 DUT 都返回了结果
+                all_complete = all(code is not None for code in self._test_results.values())
+
+        # 如果所有测试完成，触发事件
+        if all_complete:
+            self._test_complete_event.set()
 
     def _on_device_status_changed_callback(self, dut_index: int, status: TC3720Status) -> None:
         """设备状态变化回调（转发到 UI）。

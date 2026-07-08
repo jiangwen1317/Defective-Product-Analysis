@@ -153,27 +153,33 @@ class ArmProtocol:
                 logger.debug("跳过帧首前 %d 个异常字符: %r", at_pos, raw[:at_pos])
                 raw = raw[at_pos:]
             elif at_pos == -1:
-                logger.warning("指令格式错误：缺少帧首 '@' %r", raw)
+                # 没有找到 '@' 帧首，检查是否为非协议数据（如机械臂配置信息）
+                if raw.startswith(("local_port", "MAC:", "W5500", "NETLOG", "TCPserver")):
+                    logger.debug("忽略非协议数据: %r", raw[:50])
+                else:
+                    logger.debug("指令格式错误：缺少帧首 '@' %r", raw)
                 return None
 
         # 验证帧首尾标识
         if not raw.startswith("@") or not raw.endswith("+"):
-            logger.warning("指令格式错误：缺少首尾标识 %s", raw)
+            # 首尾标识不完整可能是分片数据，使用 debug 级别
+            logger.debug("帧首尾标识不完整: startswith('@')=%s, endswith('+')=%s, raw=%r",
+                        raw.startswith("@"), raw.endswith("+"), raw[:50])
             return None
 
         # 验证首字符后不能直接是空格（帧头后必须有内容）
         if len(raw) < 3 or raw[1] == " ":
-            logger.warning("指令格式错误：帧首 '@' 后不能直接是空格")
+            logger.debug("指令格式错误：帧首 '@' 后不能直接是空格: %s", raw)
             return None
 
         # 验证 '+' 后面不能有额外字符
         if raw.index("+") != len(raw) - 1:
-            logger.warning("指令格式错误：结束符 '+' 后不能有额外字符")
+            logger.debug("指令格式错误：结束符 '+' 后不能有额外字符: %s", raw)
             return None
 
         # 验证帧尾 '+' 前不能是空格
         if raw[-2] == " ":
-            logger.warning("指令格式错误：结束符 '+' 前不能是空格")
+            logger.debug("指令格式错误：结束符 '+' 前不能是空格: %s", raw)
             return None
 
         # 去除首尾标识后提取内容
@@ -182,12 +188,12 @@ class ArmProtocol:
         # 分割指令类型和参数（使用单个空格分隔）
         parts = content.split(" ")
         if not parts or not parts[0]:
-            logger.warning("指令内容为空: %s", raw)
+            logger.debug("指令内容为空: %s", raw)
             return None
 
         # 验证各字段之间没有多余空格（不能有空字段）
         if any(not part for part in parts):
-            logger.warning("指令中存在多余空格或连续空格: %s", raw)
+            logger.debug("指令中存在多余空格或连续空格: %s", raw)
             return None
 
         cmd = parts[0]
@@ -197,21 +203,21 @@ class ArmProtocol:
         elif cmd == "TEST_DONE":
             return cls._parse_test_done(parts[1:])
         else:
-            logger.warning("未知的指令类型: %s", cmd)
+            logger.debug("未知的指令类型: %s", cmd)
             return None
 
     @classmethod
     def _parse_start_test(cls, parts: list[str]) -> tuple[str, dict] | None:
         """解析 START_TEST 指令参数。"""
         if len(parts) < 2:
-            logger.warning("START_TEST 指令参数不足")
+            logger.debug("START_TEST 指令参数不足")
             return None
 
         group = parts[0]
         bitmask = parts[1]
 
         if not cls._validate_group(group) or not cls._validate_bitmask(bitmask):
-            logger.warning("START_TEST 指令参数格式错误: group=%s, bitmask=%s", group, bitmask)
+            logger.debug("START_TEST 指令参数格式错误: group=%s, bitmask=%s", group, bitmask)
             return None
 
         return ("START_TEST", {"group": group, "bitmask": bitmask})
@@ -220,19 +226,19 @@ class ArmProtocol:
     def _parse_test_done(cls, parts: list[str]) -> tuple[str, dict] | None:
         """解析 TEST_DONE 指令参数。"""
         if len(parts) < 9:  # group + 8个 error_codes
-            logger.warning("TEST_DONE 指令参数不足")
+            logger.debug("TEST_DONE 指令参数不足")
             return None
 
         group = parts[0]
         error_codes = parts[1:9]
 
         if not cls._validate_group(group):
-            logger.warning("TEST_DONE 指令 group 格式错误: %s", group)
+            logger.debug("TEST_DONE 指令 group 格式错误: %s", group)
             return None
 
         for i, code in enumerate(error_codes, start=1):
             if not cls._validate_hex4(code):
-                logger.warning("TEST_DONE 指令 EC%d 格式错误: %s", i, code)
+                logger.debug("TEST_DONE 指令 EC%d 格式错误: %s", i, code)
                 return None
 
         return (

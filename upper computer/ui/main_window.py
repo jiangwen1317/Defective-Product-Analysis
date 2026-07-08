@@ -109,6 +109,14 @@ class MainWindow(QMainWindow):
         # 日志
         self._log_buffer: list[str] = []
 
+        # UI 控件引用（初始化为 None，便于安全检查）
+        self._flow_icons: dict[GatewayState, QLabel] | None = None
+        self._flow_nodes: dict[GatewayState, QWidget] | None = None
+        self._arm_connection: ConnectionStatus | None = None
+        self._tc3720_connection: ConnectionStatus | None = None
+        self._alarm_card: Card | None = None
+        self._task_group_label: QLabel | None = None
+
         # 窗口初始化
         self._init_ui()
         self._init_gateway()
@@ -446,7 +454,8 @@ class MainWindow(QMainWindow):
             GatewayState.FORWARDING,
         ]
 
-        self._flow_nodes: dict[GatewayState, QWidget] = {}
+        self._flow_nodes = {}
+        self._flow_icons = {}
 
         for i, state in enumerate(states):
             config = STATE_CONFIG[state]
@@ -471,7 +480,6 @@ class MainWindow(QMainWindow):
             node_layout.addWidget(step_label)
 
             # 状态图标
-            self._flow_icons: dict[GatewayState, QLabel] = {}
             icon_label = QLabel(config["icon"])
             icon_label.setStyleSheet(f"""
                 color: {COLOR_TEXT_MUTED};
@@ -1010,7 +1018,7 @@ class MainWindow(QMainWindow):
     def _update_flow_display_safe(self, state: GatewayState) -> None:
         """更新流程显示（主线程安全）。"""
         # 检查控件是否已初始化
-        if not hasattr(self, '_flow_icons') or not self._flow_icons:
+        if self._flow_icons is None or self._flow_nodes is None:
             logger.warning("流程图控件未初始化，跳过状态更新")
             return
 
@@ -1058,7 +1066,7 @@ class MainWindow(QMainWindow):
     def _update_arm_display_safe(self, connected: bool) -> None:
         """更新机械臂显示（主线程安全）。"""
         # 检查控件是否已初始化
-        if not hasattr(self, '_arm_connection') or self._arm_connection is None:
+        if self._arm_connection is None:
             logger.warning("机械臂显示控件未初始化，跳过状态更新")
             return
 
@@ -1082,7 +1090,7 @@ class MainWindow(QMainWindow):
     def _update_3720_display_safe(self, status: TC3720Status) -> None:
         """更新 3720 显示（主线程安全）。"""
         # 检查控件是否已初始化
-        if not hasattr(self, '_tc3720_connection') or self._tc3720_connection is None:
+        if self._tc3720_connection is None:
             logger.warning("3720 显示控件未初始化，跳过状态更新")
             return
 
@@ -1110,7 +1118,7 @@ class MainWindow(QMainWindow):
             record: 中转记录
         """
         # 检查控件是否已初始化
-        if not hasattr(self, '_task_group_label') or self._task_group_label is None:
+        if self._task_group_label is None:
             logger.warning("任务显示控件未初始化，跳过传输更新")
             return
 
@@ -1162,7 +1170,7 @@ class MainWindow(QMainWindow):
             message: 错误消息
         """
         # 检查控件是否已初始化
-        if not hasattr(self, '_alarm_card') or self._alarm_card is None:
+        if self._alarm_card is None:
             logger.warning("告警显示控件未初始化，跳过错误更新")
             return
 

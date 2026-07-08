@@ -1,5 +1,5 @@
 """
-机械臂设备适配器。
+机械臂设备适配器 - TCP 模式。
 
 支持两种模式：
 - TCP Server 模式（被动接收）：监听端口，等待机械臂主动连接
@@ -14,11 +14,10 @@ import logging
 import select
 import socket
 import threading
-import time
 from enum import Enum
 from typing import Callable
 
-from protocol.arm_protocol import ArmProtocol
+from adapters.base_arm_adapter import BaseArmAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +29,8 @@ class ArmAdapterMode(Enum):
     CLIENT = "tcp_client"  # TCP Client：主动连接下位机
 
 
-class ArmAdapter:
-    """机械臂设备适配器。
+class ArmAdapter(BaseArmAdapter):
+    """机械臂设备 TCP 适配器。
 
     支持 TCP Server 和 TCP Client 两种模式：
     - Server 模式：被动监听，等待机械臂主动连接
@@ -57,8 +56,7 @@ class ArmAdapter:
         reconnect_interval: float = 5.0,
         on_connected: Callable[["ArmAdapter"], None] | None = None,
         on_disconnected: Callable[["ArmAdapter"], None] | None = None,
-        on_start_test: Callable[[str, str], None] | None = None,  # DEPRECATED: 未使用
-        on_data_received: Callable[[str], None] | None = None,  # 原始数据回调（上层负责解析）
+        on_data_received: Callable[[str], None] | None = None,
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         """初始化机械臂适配器。
@@ -72,38 +70,27 @@ class ArmAdapter:
             reconnect_interval: 重连间隔秒数（Client 模式，默认为 5.0）。
             on_connected: 机械臂连接成功回调。
             on_disconnected: 机械臂断开连接回调。
-            on_start_test: 已弃用，请使用 on_data_received 替代。
             on_data_received: 收到任意数据回调（由上层协议解析）。
             on_error: 错误发生回调。
         """
+        super().__init__(
+            reconnect_interval=reconnect_interval,
+            on_connected=on_connected,
+            on_disconnected=on_disconnected,
+            on_data_received=on_data_received,
+            on_error=on_error,
+        )
+
         self._host = host
         self._port = port
         self._mode = ArmAdapterMode(mode) if isinstance(mode, str) else mode
         self._target_host = target_host
         self._target_port = target_port
-        self._reconnect_interval = reconnect_interval
-        self._on_connected = on_connected
-        self._on_disconnected = on_disconnected
-        self._on_start_test = on_start_test
-        self._on_data_received = on_data_received
-        self._on_error = on_error
 
-        # 网络资源
+        # 网络资源（基类不使用）
         self._server_socket: socket.socket | None = None
         self._client_socket: socket.socket | None = None
-
-        # 线程资源
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self._connected = False
-        self._reconnect_thread: threading.Thread | None = None
-        self._stop_reconnect = threading.Event()
-
-        # 读取缓冲区
-        self._buffer = ""
-
-        # 锁
-        self._lock = threading.Lock()
+        self._receive_thread: threading.Thread | None = None
 
     @property
     def mode(self) -> ArmAdapterMode:
@@ -132,19 +119,12 @@ class ArmAdapter:
         return None
 
     @property
-    def is_connected(self) -> bool:
-        """机械臂是否已连接。"""
-        with self._lock:
-            return self._connected and self._client_socket is not None
-
-    @property
     def client_address(self) -> str | None:
         """获取已连接客户端的地址。"""
         with self._lock:
             if self._client_socket:
                 try:
                     if self._mode == ArmAdapterMode.CLIENT:
-                        # Client 模式下返回连接到的远程地址
                         return f"{self._target_host}:{self._target_port}"
                     return str(self._client_socket.getpeername())
                 except Exception:
@@ -182,12 +162,12 @@ class ArmAdapter:
             self._server_socket.listen(1)
             self._server_socket.settimeout(self.SOCKET_TIMEOUT)
 
-            self._thread = threading.Thread(
+            self._receive_thread = threading.Thread(
                 target=self._run_server_loop,
                 name=f"ArmAdapter-Server-{self._port}",
                 daemon=True,
             )
-            self._thread.start()
+            self._receive_thread.start()
 
             logger.info("机械臂适配器已启动 [Server模式]，监听 %s:%d", self._host, self._port)
             return True
@@ -202,32 +182,22 @@ class ArmAdapter:
     def _start_client_mode(self) -> bool:
         """启动 TCP Client 模式。"""
         # 先尝试连接
-        if not self._connect_to_target():
+        if not self._do_connect():
             # 启动重连线程
-            self._reconnect_thread = threading.Thread(
-                target=self._reconnect_loop,
-                name="ArmAdapter-Reconnect",
-                daemon=True,
-            )
-            self._reconnect_thread.start()
+            self._start_reconnect()
         else:
-            # 启动接收线程
-            self._thread = threading.Thread(
-                target=self._run_client_loop,
-                name=f"ArmAdapter-Client-{self._target_host}:{self._target_port}",
-                daemon=True,
-            )
-            self._thread.start()
+            # 连接成功，启动接收线程
+            self._start_receive_thread()
 
         logger.info("机械臂适配器已启动 [Client模式]，目标: %s:%d", self._target_host, self._target_port)
         return True
 
-    def _connect_to_target(self) -> bool:
-        """尝试连接到目标地址。
+    def _do_connect(self) -> bool:
+        """执行实际连接操作。"""
+        if self._mode == ArmAdapterMode.SERVER:
+            # Server 模式不主动连接
+            return False
 
-        Returns:
-            连接是否成功。
-        """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self.CONNECT_TIMEOUT)
@@ -240,159 +210,15 @@ class ArmAdapter:
                 self._buffer = ""
 
             logger.info("已连接到目标: %s:%d", self._target_host, self._target_port)
-
-            # 触发连接回调
-            if self._on_connected:
-                self._on_connected(self)
-
+            self._on_connected_internal()
             return True
 
         except (OSError, socket.timeout) as e:
             logger.warning("连接目标失败: %s:%d - %s", self._target_host, self._target_port, e)
             return False
 
-    def _reconnect_loop(self) -> None:
-        """重连循环（Client 模式专用）。"""
-        while self._running and not self._stop_reconnect.is_set():
-            if self._connect_to_target():
-                # 连接成功，启动接收线程
-                self._thread = threading.Thread(
-                    target=self._run_client_loop,
-                    name=f"ArmAdapter-Client-{self._target_host}:{self._target_port}",
-                    daemon=True,
-                )
-                self._thread.start()
-                return
-
-            # 等待重连间隔
-            for _ in range(int(self._reconnect_interval * 10)):
-                if self._stop_reconnect.is_set() or not self._running:
-                    return
-                time.sleep(0.1)
-
-        logger.info("重连线程退出")
-
-    def _start_reconnect(self) -> None:
-        """启动重连（安全调用，避免重复创建重连线程）。"""
-        with self._lock:
-            # 检查是否已有重连线程在运行
-            if self._reconnect_thread and self._reconnect_thread.is_alive():
-                logger.debug("重连线程已在运行，跳过")
-                return
-
-            self._stop_reconnect.clear()
-            self._reconnect_thread = threading.Thread(
-                target=self._reconnect_loop,
-                name="ArmAdapter-Reconnect",
-                daemon=True,
-            )
-            self._reconnect_thread.start()
-
-    def stop(self) -> None:
-        """停止适配器，断开所有连接。"""
-        if not self._running:
-            return
-
-        logger.info("停止机械臂适配器...")
-        self._running = False
-        self._stop_reconnect.set()
-
-        # 等待重连线程结束
-        if self._reconnect_thread and self._reconnect_thread.is_alive():
-            self._reconnect_thread.join(timeout=1.0)
-            self._reconnect_thread = None
-
-        # 等待主线程结束
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-            self._thread = None
-
-        # 清理资源
-        self._cleanup()
-
-        logger.info("机械臂适配器已停止")
-
-    def send_raw(self, data: str) -> bool:
-        """发送原始数据（用于回显测试）。
-
-        Args:
-            data: 要发送的原始字符串。
-
-        Returns:
-            发送是否成功。
-        """
-        with self._lock:
-            if not self._connected or not self._client_socket:
-                logger.warning("未连接，无法发送数据")
-                return False
-
-            try:
-                self._client_socket.sendall(data.encode("utf-8"))
-                logger.info("已发送原始数据: %r", data)
-                return True
-
-            except Exception as e:
-                logger.error("发送数据失败: %s", e)
-                return False
-
-    def send_test_done(self, group: str, error_codes: list[str]) -> bool:
-        """向机械臂发送 TEST_DONE 指令。
-
-        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
-
-        Args:
-            group: 组号（2位十六进制）。
-            error_codes: 8个错误码列表。
-
-        Returns:
-            发送是否成功。
-        """
-        with self._lock:
-            if not self._connected or not self._client_socket:
-                logger.warning("机械臂未连接，无法发送指令")
-                return False
-
-            try:
-                command = ArmProtocol.build_test_done(group, error_codes)
-                self._client_socket.sendall(command.encode("utf-8"))
-                logger.info("已发送 TEST_DONE 到机械臂: %s", command)
-                return True
-
-            except Exception as e:
-                logger.error("发送 TEST_DONE 失败: %s", e)
-                self._on_error(f"发送失败: {e}")
-                return False
-
-    def send_abort(self, error_code: str = "EEEE") -> bool:
-        """向机械臂发送异常中止信号。
-
-        DEPRECATED: 请使用 send_raw() 替代，由上层构建协议指令。
-
-        Args:
-            error_code: 错误码，默认为 "EEEE"。
-
-        Returns:
-            发送是否成功。
-        """
-        with self._lock:
-            if not self._connected or not self._client_socket:
-                logger.warning("机械臂未连接，无法发送中止信号")
-                return False
-
-            try:
-                # 发送异常中止（所有 DUT 标记为错误）
-                error_codes = [error_code] * 8
-                command = ArmProtocol.build_test_done("FF", error_codes)
-                self._client_socket.sendall(command.encode("utf-8"))
-                logger.warning("已发送异常中止信号到机械臂: %s", command)
-                return True
-
-            except Exception as e:
-                logger.error("发送异常中止信号失败: %s", e)
-                return False
-
-    def _cleanup(self) -> None:
-        """清理 socket 资源。"""
+    def _do_disconnect(self) -> None:
+        """执行实际断开连接操作。"""
         with self._lock:
             # 关闭客户端连接
             if self._client_socket:
@@ -414,6 +240,40 @@ class ArmAdapter:
                 except Exception:
                     pass
                 self._server_socket = None
+
+    def _is_physical_connected(self) -> bool:
+        """检查物理连接是否有效。"""
+        return self._connected and self._client_socket is not None
+
+    def _read_available(self) -> bytes | None:
+        """读取可用数据。"""
+        if not self._client_socket:
+            return None
+
+        try:
+            readable, _, _ = select.select([self._client_socket], [], [], self.SOCKET_TIMEOUT)
+            if not readable:
+                return None
+
+            data = self._client_socket.recv(self.BUFFER_SIZE)
+            if not data:
+                return None
+            return data
+
+        except socket.timeout:
+            return None
+        except Exception:
+            return None
+
+    def _write_data(self, data: str) -> bool:
+        """发送数据。"""
+        try:
+            self._client_socket.sendall(data.encode("utf-8"))
+            logger.debug("已发送数据: %r", data)
+            return True
+        except Exception as e:
+            logger.error("发送数据失败: %s", e)
+            return False
 
     def _run_server_loop(self) -> None:
         """TCP Server 主循环（在独立线程中运行）。"""
@@ -438,71 +298,6 @@ class ArmAdapter:
                         self._on_error(f"Server error: {e}")
 
         logger.info("TCP Server 线程退出")
-
-    def _run_client_loop(self) -> None:
-        """TCP Client 主循环（在独立线程中运行）。"""
-        logger.info("TCP Client 接收线程启动")
-
-        client_socket: socket.socket | None = None
-        with self._lock:
-            client_socket = self._client_socket
-
-        if not client_socket:
-            logger.warning("TCP Client socket 未初始化")
-            return
-
-        try:
-            while self._running and self._connected:
-                try:
-                    # 使用 select 检测数据可用性
-                    readable, _, _ = select.select(
-                        [client_socket], [], [], self.SOCKET_TIMEOUT
-                    )
-
-                    if not readable:
-                        continue
-
-                    data = client_socket.recv(self.BUFFER_SIZE)
-
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    logger.error("读取数据异常: %s", e)
-                    break
-
-                if not data:
-                    logger.info("连接已关闭")
-                    break
-
-                # 解码并追加到缓冲区
-                message = data.decode("utf-8")
-                with self._lock:
-                    self._buffer += message
-
-                logger.debug("收到原始数据: %r", message)
-
-                # 触发数据接收回调（用于回显测试）
-                if self._on_data_received:
-                    self._on_data_received(message)
-
-                # 处理完整帧（以 '+' 结尾）
-                self._process_buffer()
-
-        except Exception as e:
-            logger.error("连接处理异常: %s", e)
-            if self._on_error:
-                self._on_error(str(e))
-
-        finally:
-            # 连接断开清理
-            self._on_disconnected_internal()
-
-            # Client 模式：触发重连
-            # 使用 _start_reconnect() 避免与现有的重连线程冲突
-            if self._running and self._mode == ArmAdapterMode.CLIENT:
-                self._start_reconnect()
-
-        logger.info("TCP Client 接收线程退出")
 
     def _handle_client(self, client_socket: socket.socket) -> None:
         """处理机械臂客户端连接（Server 模式）。
@@ -530,30 +325,13 @@ class ArmAdapter:
         client_socket.settimeout(self.SOCKET_TIMEOUT)
 
         # 触发连接回调
-        if self._on_connected:
-            self._on_connected(self)
+        self._on_connected_internal()
 
         try:
             while self._running and self._connected:
-                try:
-                    # 使用 select 检测数据可用性
-                    readable, _, _ = select.select(
-                        [client_socket], [], [], self.SOCKET_TIMEOUT
-                    )
-
-                    if not readable:
-                        continue
-
-                    data = client_socket.recv(self.BUFFER_SIZE)
-
-                except socket.timeout:
+                data = self._read_available()
+                if data is None:
                     continue
-                except Exception as e:
-                    logger.error("读取数据异常: %s", e)
-                    break
-
-                if not data:
-                    break
 
                 # 解码并追加到缓冲区
                 message = data.decode("utf-8")
@@ -562,11 +340,11 @@ class ArmAdapter:
 
                 logger.debug("收到原始数据: %r", message)
 
-                # 触发数据接收回调（用于回显测试）
+                # 触发数据接收回调
                 if self._on_data_received:
                     self._on_data_received(message)
 
-                # 处理完整帧（以 '+' 结尾）
+                # 处理完整帧
                 self._process_buffer()
 
         except Exception as e:
@@ -575,66 +353,4 @@ class ArmAdapter:
                 self._on_error(str(e))
 
         finally:
-            # 连接断开清理
             self._on_disconnected_internal()
-
-    def _process_buffer(self) -> None:
-        """处理缓冲区中的数据，提取完整帧。
-
-        注意：此方法需要在持有锁的情况下调用，或确保线程安全调用。
-        缓冲区读取、处理、更新在一次锁操作内完成，避免竞态条件。
-        """
-        frames_to_process: list[tuple[str, dict]] = []
-
-        # 在锁内完成所有缓冲区操作，避免竞态条件
-        with self._lock:
-            buffer_copy = self._buffer
-
-            while "+" in buffer_copy:
-                frame, buffer_copy = buffer_copy.split("+", 1)
-                frame += "+"
-
-                # 解析指令（纯计算操作，无需锁保护）
-                result = ArmProtocol.parse_command(frame)
-                if result:
-                    frames_to_process.append(result)
-                else:
-                    logger.warning("无法解析指令帧: %s", frame.strip())
-
-            # 原子更新缓冲区
-            self._buffer = buffer_copy
-
-        # 在锁外执行回调，避免长时间持有锁
-        for cmd_type, params in frames_to_process:
-            if cmd_type == "START_TEST":
-                group = params.get("group", "")
-                bitmask = params.get("bitmask", "")
-                logger.info(
-                    "收到 START_TEST - Group: %s, Bitmask: %s",
-                    group,
-                    bitmask,
-                )
-                if self._on_start_test:
-                    self._on_start_test(group, bitmask)
-            else:
-                logger.warning("收到未知指令: %s", cmd_type)
-
-    def _on_disconnected_internal(self) -> None:
-        """内部断开连接处理。"""
-        with self._lock:
-            self._connected = False
-
-            if self._client_socket:
-                try:
-                    self._client_socket.shutdown(socket.SHUT_RDWR)
-                except Exception:
-                    pass
-                try:
-                    self._client_socket.close()
-                except Exception:
-                    pass
-                self._client_socket = None
-
-        logger.info("机械臂已断开连接")
-        if self._on_disconnected:
-            self._on_disconnected(self)
