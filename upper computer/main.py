@@ -65,7 +65,49 @@ def setup_logging() -> None:
     root_logger.addHandler(file_handler)
 
 
+def preflight_check() -> bool:
+    """启动前自检。
+
+    Returns:
+        检查是否通过。
+    """
+    # 获取项目根目录
+    project_root = Path(__file__).parent
+
+    # 检查配置文件存在
+    config_path = project_root / "config.json"
+    if not config_path.exists():
+        print("错误: 配置文件 config.json 不存在", file=sys.stderr)
+        print("提示: 请复制 config.example.json 为 config.json 并修改配置", file=sys.stderr)
+        return False
+
+    # 检查日志目录可写
+    log_dir = project_root / "logs"
+    if not log_dir.exists():
+        try:
+            log_dir.mkdir(exist_ok=True)
+        except OSError as e:
+            print(f"错误: 无法创建日志目录: {e}", file=sys.stderr)
+            return False
+
+    if not os.access(log_dir, os.W_OK):
+        print("错误: 日志目录不可写", file=sys.stderr)
+        return False
+
+    # 检查 Python 版本
+    if sys.version_info < (3, 10):
+        print(f"错误: 需要 Python 3.10+, 当前版本: {sys.version_info.major}.{sys.version_info.minor}",
+              file=sys.stderr)
+        return False
+
+    return True
+
+
 if __name__ == "__main__":
+    # 启动前自检
+    if not preflight_check():
+        sys.exit(1)
+
     # 配置日志（控制台 + 文件）
     setup_logging()
 

@@ -663,8 +663,8 @@ class MainWindow(QMainWindow):
         try:
             result = self._gateway.start()
         except Exception as e:
-            import traceback
-            self._log("错误", f"启动异常: {e}\n{traceback.format_exc()}")
+            logger.exception("启动网关失败: %s", e)
+            self._log("错误", "启动失败，请查看日志")
             return
 
         if result:
