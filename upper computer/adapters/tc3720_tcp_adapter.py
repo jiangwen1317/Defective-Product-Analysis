@@ -13,16 +13,10 @@ import time
 from enum import Enum
 from typing import Callable
 
+# 从 tc3720_adapter 导入共享的 TC3720Status
+from .tc3720_adapter import TC3720Status
+
 logger = logging.getLogger(__name__)
-
-
-class TC3720Status(Enum):
-    """3720 设备状态枚举。"""
-
-    OFFLINE = "offline"
-    IDLE = "idle"
-    TESTING = "testing"
-    ERROR = "error"
 
 
 class TC3720TcpAdapter:

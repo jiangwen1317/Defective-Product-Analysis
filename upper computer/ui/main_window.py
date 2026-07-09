@@ -14,6 +14,7 @@
 
 import logging
 import sys
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -110,8 +111,8 @@ class MainWindow(QMainWindow):
         # 统计数据
         self._stats = {"total": 0, "success": 0, "failed": 0}
 
-        # 日志
-        self._log_buffer: list[str] = []
+        # 日志（使用 deque 自动限制长度）
+        self._log_buffer: deque[str] = deque(maxlen=self._ui_config.get("log_max_lines", 5000))
 
         # UI 控件引用（初始化为 None，便于安全检查）
         self._arm_connection: ConnectionStatus | None = None
@@ -642,8 +643,7 @@ class MainWindow(QMainWindow):
             logger.info("网关实例初始化成功")
         except Exception as e:
             logger.error("网关实例初始化失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.debug("初始化失败详情:", exc_info=True)
 
     def _on_toggle_service(self) -> None:
         """切换服务状态。"""
@@ -759,9 +759,7 @@ class MainWindow(QMainWindow):
                 logger.debug("[UI状态] DUT#%d set_dut_status 调用完成", dut_index)
 
         except Exception as e:
-            logger.error("更新设备状态失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新设备状态失败: %s", e)
 
     def _stop_gateway(self) -> None:
         """停止网关服务。"""
@@ -902,9 +900,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, '_gw_status_emoji'):
                     self._gw_status_emoji.setText(state_emojis.get(state, "⚪"))
         except Exception as e:
-            logger.error("更新网关状态显示失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新网关状态显示失败: %s", e)
 
     def _on_arm_connected(self, connected: bool) -> None:
         """机械臂连接状态变化回调（线程安全）。"""
@@ -927,9 +923,7 @@ class MainWindow(QMainWindow):
                 self._arm_connection.set_status("offline")
                 self._log("连接", "机械臂已断开")
         except Exception as e:
-            logger.error("更新机械臂显示失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新机械臂显示失败: %s", e)
 
     def _on_dut_status_changed(self, dut_index: int, status: TC3720Status) -> None:
         """单个 DUT 状态变化回调（线程安全）。
@@ -971,9 +965,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_dut_connections') and self._dut_connections and dut_index in self._dut_connections:
                 self._dut_connections[dut_index].set_status(mapped_status)
         except Exception as e:
-            logger.error("更新 DUT#%d 显示失败: %s", dut_index, e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新 DUT#%d 显示失败: %s", dut_index, e)
 
     def _on_transfer_record(self, record: TransferRecord) -> None:
         """中转记录回调（线程安全）。
@@ -1019,9 +1011,7 @@ class MainWindow(QMainWindow):
             # 更新统计显示
             self._update_stats_display()
         except Exception as e:
-            logger.error("更新传输显示失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新传输显示失败: %s", e)
 
     def _update_stats_display(self) -> None:
         """更新统计显示。"""
@@ -1067,9 +1057,7 @@ class MainWindow(QMainWindow):
 
             self._log("错误", f"[{error_code.value}] {message}")
         except Exception as e:
-            logger.error("更新错误显示失败: %s", e)
-            import traceback
-            traceback.print_exc()
+            logger.exception("更新错误显示失败: %s", e)
 
     def _log(self, level: str, message: str) -> None:
         """添加日志条目（线程安全）。"""
@@ -1101,11 +1089,6 @@ class MainWindow(QMainWindow):
             self._log_text.verticalScrollBar().setValue(
                 self._log_text.verticalScrollBar().maximum()
             )
-
-        # 限制日志行数
-        max_lines = self._ui_config.get("log_max_lines", 5000)
-        if len(self._log_buffer) > max_lines:
-            self._log_buffer = self._log_buffer[-max_lines:]
 
     def _on_clear_log(self) -> None:
         """清空日志。"""

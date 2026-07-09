@@ -88,3 +88,6 @@ config.json
 *.png
 *.jpg
 *.jpeg
+
+# Runtime data
+data/

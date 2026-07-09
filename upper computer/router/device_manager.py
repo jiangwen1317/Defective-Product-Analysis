@@ -58,7 +58,8 @@ class DeviceManager:
     管理 8 个 DUT 对应的 3720 测试仪连接，支持并发测试。
     """
 
-    # DUT 数量
+    # DUT 数量：协议级常量，表示机械臂通信协议支持的最大 DUT 数量
+    # 实际运行的 DUT 数量由 config.json 中的 devices 配置决定
     DUT_COUNT: int = 8
 
     def __init__(
