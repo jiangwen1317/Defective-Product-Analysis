@@ -110,10 +110,7 @@ class TestMainWindowUIInitialization:
             content = f.read()
 
         # 检查关键的控件初始化代码
-        assert "_flow_icons: dict[GatewayState, QLabel] | None = None" in content
-        assert "_flow_nodes: dict[GatewayState, QWidget] | None = None" in content
         assert "_arm_connection: ConnectionStatus | None = None" in content
-        assert "_tc3720_connection: ConnectionStatus | None = None" in content
         assert "_alarm_card: Card | None = None" in content
         assert "_task_group_label: QLabel | None = None" in content
 
@@ -125,14 +122,13 @@ class TestMainWindowUIInitialization:
         with open(source_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # 查找所有使用 hasattr 检查 _flow_icons, _arm_connection 等的地方
-        # 这些应该被替换为 None 检查
+        # 查找所有使用 hasattr 检查直接控件属性的地方
+        # 子部件（如 _alarm_label）通过父控件间接初始化，可以使用 hasattr
         lines_with_hasattr = []
         for i, line in enumerate(content.split('\n'), 1):
-            if 'hasattr' in line and ('_flow_icons' in line or '_arm_connection' in line
-                                       or '_tc3720_connection' in line or '_alarm_card' in line
+            if 'hasattr' in line and ('_arm_connection' in line
                                        or '_task_group_label' in line):
                 lines_with_hasattr.append((i, line.strip()))
 
-        # 不应该有使用 hasattr 检查这些控件的情况
+        # 不应该有使用 hasattr 检查这些主控件的情况
         assert len(lines_with_hasattr) == 0, f"Found hasattr checks: {lines_with_hasattr}"

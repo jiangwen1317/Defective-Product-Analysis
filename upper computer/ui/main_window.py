@@ -88,13 +88,6 @@ from ui.styles import (
 
 logger = logging.getLogger(__name__)
 
-# 状态配置（透传模式）
-STATE_CONFIG = {
-    GatewayState.IDLE: {"text": "空闲", "color": COLOR_IDLE, "icon": "○"},
-    GatewayState.FORWARDING: {"text": "透传中", "color": COLOR_INFO, "icon": "◉"},
-    GatewayState.ERROR: {"text": "异常", "color": COLOR_ERROR, "icon": "●"},
-}
-
 
 class MainWindow(QMainWindow):
     """机械臂上位机主窗口。
@@ -121,8 +114,6 @@ class MainWindow(QMainWindow):
         self._log_buffer: list[str] = []
 
         # UI 控件引用（初始化为 None，便于安全检查）
-        self._flow_icons: dict[GatewayState, QLabel] | None = None
-        self._flow_nodes: dict[GatewayState, QWidget] | None = None
         self._arm_connection: ConnectionStatus | None = None
         self._alarm_card: Card | None = None
         self._task_group_label: QLabel | None = None
@@ -131,11 +122,6 @@ class MainWindow(QMainWindow):
         # 窗口初始化
         self._init_ui()
         self._init_gateway()
-
-        # 状态更新定时器
-        self._update_timer = QTimer(self)
-        self._update_timer.timeout.connect(self._on_timer_tick)
-        self._update_timer.start(100)
 
     def _init_ui(self) -> None:
         """初始化界面布局。"""
@@ -452,10 +438,6 @@ class MainWindow(QMainWindow):
 
         return card
 
-    def _create_center_panel(self) -> QWidget:
-        """创建中部面板（兼容旧代码）。"""
-        return self._create_right_panel()
-
     def _create_right_panel(self) -> QWidget:
         """创建右侧面板（状态区）。
 
@@ -646,79 +628,6 @@ class MainWindow(QMainWindow):
 
         return panel
 
-    def _create_flow_diagram(self) -> QWidget:
-        """创建流程状态图（保留兼容但不再使用）。"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACING_SM)
-
-        # 状态节点（透传模式）
-        states = [
-            GatewayState.IDLE,
-            GatewayState.FORWARDING,
-        ]
-
-        self._flow_nodes = {}
-        self._flow_icons = {}
-
-        for i, state in enumerate(states):
-            config = STATE_CONFIG[state]
-
-            # 节点行
-            node_row = QWidget()
-            node_layout = QHBoxLayout(node_row)
-            node_layout.setContentsMargins(0, SPACING_XS, 0, SPACING_XS)
-            node_layout.setSpacing(SPACING_MD)
-
-            # 步骤编号
-            step_label = QLabel(f"{i + 1}")
-            step_label.setFixedSize(24, 24)
-            step_label.setAlignment(Qt.AlignCenter)
-            step_label.setStyleSheet(f"""
-                background-color: {COLOR_BG_TERTIARY};
-                color: {COLOR_TEXT_MUTED};
-                border-radius: 12px;
-                font-size: {FONT_SIZE_SM};
-                font-weight: bold;
-            """)
-            node_layout.addWidget(step_label)
-
-            # 状态图标
-            icon_label = QLabel(config["icon"])
-            icon_label.setStyleSheet(f"""
-                color: {COLOR_TEXT_MUTED};
-                font-size: 18px;
-            """)
-            self._flow_icons[state] = icon_label
-            node_layout.addWidget(icon_label)
-
-            # 状态文字
-            state_label = QLabel(config["text"])
-            state_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-            node_layout.addWidget(state_label)
-
-            node_layout.addStretch()
-
-            # 保存节点引用
-            self._flow_nodes[state] = node_row
-
-            layout.addWidget(node_row)
-
-            # 连接线
-            if i < len(states) - 1:
-                line = QFrame()
-                line.setFrameShape(QFrame.VLine)
-                line.setStyleSheet(f"""
-                    background-color: {COLOR_BORDER};
-                    border: 1px dashed {COLOR_BORDER};
-                    max-height: 20px;
-                """)
-                line.setFixedHeight(20)
-                layout.addWidget(line)
-
-        return widget
-
     def _init_gateway(self) -> None:
         """初始化网关实例。"""
         try:
@@ -735,10 +644,6 @@ class MainWindow(QMainWindow):
             logger.error("网关实例初始化失败: %s", e)
             import traceback
             traceback.print_exc()
-
-    def _on_timer_tick(self) -> None:
-        """定时器回调。"""
-        pass
 
     def _on_toggle_service(self) -> None:
         """切换服务状态。"""
@@ -904,34 +809,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_test_progress_panel'):
             self._test_progress_panel.reset()
 
-        # 重置流程显示
-        self._reset_flow_display()
-
         # 更新网关状态标签
         if hasattr(self, '_gw_status_label'):
             self._gw_status_label.setText("空闲")
             self._gw_status_label.setStyleSheet(f"color: {COLOR_IDLE}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
-
-    def _reset_flow_display(self) -> None:
-        """重置流程显示。"""
-        # 新布局中可能没有流程图控件，跳过更新
-        if self._flow_icons is None or self._flow_nodes is None:
-            return
-
-        for state, icon_label in self._flow_icons.items():
-            icon_label.setText(STATE_CONFIG[state]["icon"])
-            icon_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 18px;")
-
-        # 重置步骤编号样式
-        for state in STATE_CONFIG.keys():
-            step_label = self._flow_nodes[state].layout().itemAt(0).widget()
-            step_label.setStyleSheet(f"""
-                background-color: {COLOR_BG_TERTIARY};
-                color: {COLOR_TEXT_MUTED};
-                border-radius: 12px;
-                font-size: {FONT_SIZE_SM};
-                font-weight: bold;
-            """)
 
     def _on_clear_alarm(self) -> None:
         """清除告警。"""
@@ -992,9 +873,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda s=state: self._update_flow_display_safe(s))
 
     def _update_flow_display_safe(self, state: GatewayState) -> None:
-        """更新流程显示（主线程安全）。"""
+        """更新网关状态显示（主线程安全）。"""
         try:
-            # 更新网关状态标签（即使没有流程图也要更新）
+            # 更新网关状态标签
             state_texts = {
                 GatewayState.IDLE: "空闲",
                 GatewayState.FORWARDING: "测试中",
@@ -1020,49 +901,8 @@ class MainWindow(QMainWindow):
                 # 更新emoji
                 if hasattr(self, '_gw_status_emoji'):
                     self._gw_status_emoji.setText(state_emojis.get(state, "⚪"))
-
-            # 检查流程图控件是否已初始化
-            if self._flow_icons is None or self._flow_nodes is None:
-                return
-
-            # 更新所有节点
-            for s, icon_label in self._flow_icons.items():
-                config = STATE_CONFIG[s]
-                step_label = self._flow_nodes[s].layout().itemAt(0).widget()
-
-                if s == state:
-                    icon_label.setText("●")
-                    icon_label.setStyleSheet(f"color: {config['color']}; font-size: 18px; font-weight: bold;")
-                    step_label.setStyleSheet(f"""
-                        background-color: {config['color']};
-                        color: white;
-                        border-radius: 12px;
-                        font-size: {FONT_SIZE_SM};
-                        font-weight: bold;
-                    """)
-                elif s.value < state.value:
-                    icon_label.setText("●")
-                    icon_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 18px; opacity: 0.5;")
-                    step_label.setStyleSheet(f"""
-                        background-color: {COLOR_TEXT_MUTED};
-                        color: {COLOR_BG_PRIMARY};
-                        border-radius: 12px;
-                        font-size: {FONT_SIZE_SM};
-                        font-weight: bold;
-                        opacity: 0.5;
-                    """)
-                else:
-                    icon_label.setText(STATE_CONFIG[s]["icon"])
-                    icon_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 18px;")
-                    step_label.setStyleSheet(f"""
-                        background-color: {COLOR_BG_TERTIARY};
-                        color: {COLOR_TEXT_MUTED};
-                        border-radius: 12px;
-                        font-size: {FONT_SIZE_SM};
-                        font-weight: bold;
-                    """)
         except Exception as e:
-            logger.error("更新流程显示失败: %s", e)
+            logger.error("更新网关状态显示失败: %s", e)
             import traceback
             traceback.print_exc()
 
@@ -1296,7 +1136,6 @@ class MainWindow(QMainWindow):
         if self._gateway and self._gateway.is_running:
             self._stop_gateway()
 
-        self._update_timer.stop()
         event.accept()
 
 
