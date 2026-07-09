@@ -181,13 +181,17 @@ class TC3720TcpAdapter:
 
         # 先尝试连接
         if not self._do_connect():
-            # 启动重连线程
+            # 连接失败，启动重连线程（状态保持 OFFLINE）
+            logger.warning("3720 初始连接失败，已启动重连线程")
             self._reconnect_thread = threading.Thread(
                 target=self._reconnect_loop,
                 name="TC3720-Reconnect",
                 daemon=True,
             )
             self._reconnect_thread.start()
+            # 不要设置状态为 IDLE，保持 OFFLINE 直到重连成功
+            logger.info("3720 TCP 适配器已启动（等待重连），目标: %s:%d", self._host, self._port)
+            return True  # 返回 True 表示适配器启动成功（会在后台重连）
         else:
             # 连接成功，启动接收线程
             self._thread = threading.Thread(
@@ -196,10 +200,10 @@ class TC3720TcpAdapter:
                 daemon=True,
             )
             self._thread.start()
-
-        self._set_status(TC3720Status.IDLE)
-        logger.info("3720 TCP 适配器已启动，目标: %s:%d", self._host, self._port)
-        return True
+            # 只有真正连接成功才设置状态为 IDLE
+            self._set_status(TC3720Status.IDLE)
+            logger.info("3720 TCP 适配器已启动，目标: %s:%d", self._host, self._port)
+            return True
 
     def _do_connect(self) -> bool:
         """执行 TCP 连接。
@@ -238,6 +242,9 @@ class TC3720TcpAdapter:
                         daemon=True,
                     )
                     self._thread.start()
+                    # 重连成功后设置状态为 IDLE
+                    self._set_status(TC3720Status.IDLE)
+                    logger.info("3720 重连成功，目标: %s:%d", self._host, self._port)
                     return
 
                 # 等待重连间隔

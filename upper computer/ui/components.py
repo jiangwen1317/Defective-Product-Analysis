@@ -4,7 +4,7 @@
 提供可复用的 UI 组件，包括卡片、状态指示器、统计面板等。
 """
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEvent, pyqtSignal
 from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -196,10 +196,10 @@ class Card(QFrame):
         title_bar = QWidget()
         title_bar.setStyleSheet(f"""
             QWidget {{
-                background-color: {COLOR_BG_TERTIARY};
+                background-color: #1a1f2e;
                 border-top-left-radius: {RADIUS_MD};
                 border-top-right-radius: {RADIUS_MD};
-                border-bottom: 1px solid {COLOR_BORDER};
+                border-bottom: 1px solid #2a2e3d;
             }}
         """)
 
@@ -208,9 +208,10 @@ class Card(QFrame):
 
         title_label = QLabel(title)
         title_label.setStyleSheet(f"""
-            color: {COLOR_TEXT_SECONDARY};
+            color: #9ca3af;
             font-size: {FONT_SIZE_SM};
-            font-weight: bold;
+            font-weight: 600;
+            letter-spacing: 0.2px;
         """)
         layout.addWidget(title_label)
         layout.addStretch()
@@ -305,14 +306,32 @@ class StatCard(QWidget):
         layout.addLayout(text_layout)
         layout.addStretch()
 
-    def set_value(self, value: str | int, color: str | None = None) -> None:
-        """设置数值和颜色。"""
+    def set_value(
+        self,
+        value: str | int,
+        color: str | None = None,
+        font_size: int | None = None,
+        font_weight: str = "bold",
+    ) -> None:
+        """设置数值和颜色。
+
+        Args:
+            value: 显示的值
+            color: 文字颜色
+            font_size: 字体大小（像素）
+            font_weight: 字体粗细（bold/normal等）
+        """
         self._value_label.setText(str(value))
+
+        # 默认值
+        size = font_size if font_size else 14
+        weight = font_weight if font_weight else "bold"
+
         if color:
             self._value_label.setStyleSheet(f"""
                 color: {color};
-                font-size: {FONT_SIZE_XL};
-                font-weight: bold;
+                font-size: {size}px;
+                font-weight: {weight};
                 font-family: {FONT_MONO};
             """)
 
@@ -365,14 +384,26 @@ class StatsPanel(QWidget):
 
         # 更新成功率颜色
         rate_float = success / total if total > 0 else 0
-        if rate_float >= 0.95:
+
+        # 0% 时标红、加粗、加大字体（更刺眼）
+        if rate_float == 0 and total > 0:
+            color = COLOR_ERROR
+            font_size = 16
+            font_weight = "bold"
+        elif rate_float >= 0.95:
             color = COLOR_SUCCESS
+            font_size = 14
+            font_weight = "bold"
         elif rate_float >= 0.8:
             color = COLOR_WARNING
+            font_size = 14
+            font_weight = "bold"
         else:
             color = COLOR_ERROR
+            font_size = 14
+            font_weight = "bold"
 
-        self._stats["rate"].set_value(rate, color)
+        self._stats["rate"].set_value(rate, color, font_size, font_weight)
 
 
 class ConnectionStatus(QWidget):
@@ -507,7 +538,11 @@ class DutGridPanel(QWidget):
 
     以网格形式显示已配置 DUT 的状态，每个 DUT 显示编号和状态。
     默认显示全部 8 个 DUT，可通过 dut_indices 参数指定显示哪些。
+    支持悬停效果和点击交互。
     """
+
+    # 信号：点击 DUT
+    dutClicked = pyqtSignal(int)  # dut_index
 
     def __init__(
         self,
@@ -523,8 +558,11 @@ class DutGridPanel(QWidget):
         super().__init__(parent)
         self._dut_widgets: dict[int, QFrame] = {}
         self._dut_status_labels: dict[int, QLabel] = {}
+        self._dut_time_labels: dict[int, QLabel] = {}
         self._dut_indicators: dict[int, StatusIndicator] = {}
         self._dut_indices = dut_indices if dut_indices is not None else list(range(1, 9))
+        self._dut_original_styles: dict[int, str] = {}  # 保存原始样式
+        self._hovered_dut: int | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -567,49 +605,116 @@ class DutGridPanel(QWidget):
             DUT 项框架
         """
         frame = QFrame()
-        frame.setFixedSize(65, 55)
-        frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {COLOR_BG_TERTIARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_SM};
+        frame.setFixedSize(72, 60)  # 稍微加宽以容纳时间
+        frame.setMouseTracking(True)
+        frame.setObjectName(f"dut_{dut_index}")
+
+        # 左边框颜色（默认灰色）
+        border_colors = {
+            "offline": "#6b7280",
+            "online": "#22c55e",
+            "testing": "#f59e0b",
+            "success": "#22c55e",
+            "failed": "#ef4444",
+            "error": "#ef4444",
+        }
+        border_color = border_colors.get("offline", "#6b7280")
+
+        base_style = f"""
+            QFrame#dut_{dut_index} {{
+                background-color: #1a1a24;
+                border: 1px solid #2a2e3d;
+                border-left: 3px solid {border_color};
+                border-radius: 4px;
             }}
-        """)
+            QFrame#dut_{dut_index}:hover {{
+                background-color: #222530;
+            }}
+        """
+        frame.setStyleSheet(base_style)
+        self._dut_original_styles[dut_index] = base_style
 
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setSpacing(1)
         layout.setAlignment(Qt.AlignCenter)
 
-        # 状态指示器 + 编号
+        # 第一行：编号 + 状态指示器
         header_layout = QHBoxLayout()
         header_layout.setAlignment(Qt.AlignCenter)
         header_layout.setSpacing(4)
+
+        index_label = QLabel(f"#{dut_index}")
+        index_label.setStyleSheet("""
+            color: #e0e0e0;
+            font-size: 12px;
+            font-weight: bold;
+        """)
+        header_layout.addWidget(index_label)
 
         indicator = StatusIndicator("offline", 8)
         self._dut_indicators[dut_index] = indicator
         header_layout.addWidget(indicator)
 
-        index_label = QLabel(f"#{dut_index}")
-        index_label.setStyleSheet(f"""
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {FONT_SIZE_SM};
-            font-weight: bold;
-        """)
-        header_layout.addWidget(index_label)
         layout.addLayout(header_layout)
 
-        # 状态文字
+        # 第二行：状态文字
         status_label = QLabel("离线")
         status_label.setAlignment(Qt.AlignCenter)
-        status_label.setStyleSheet(f"""
-            color: {COLOR_TEXT_MUTED};
-            font-size: {FONT_SIZE_XS};
-        """)
+        status_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         self._dut_status_labels[dut_index] = status_label
         layout.addWidget(status_label)
 
+        # 第三行：时间（默认显示"--:--:--"）
+        self._dut_time_labels[dut_index] = QLabel("--:--:--")
+        self._dut_time_labels[dut_index].setAlignment(Qt.AlignCenter)
+        self._dut_time_labels[dut_index].setStyleSheet("color: #4b5563; font-size: 9px;")
+        layout.addWidget(self._dut_time_labels[dut_index])
+
+        # 事件过滤
+        frame.installEventFilter(self)
+
         return frame
+
+    def eventFilter(self, obj, event) -> bool:
+        """事件过滤器，处理悬停效果和点击事件。"""
+        # 获取 dut_index
+        obj_name = obj.objectName()
+        if obj_name.startswith("dut_"):
+            try:
+                dut_index = int(obj_name.split("_")[1])
+            except (ValueError, IndexError):
+                return super().eventFilter(obj, event)
+
+            if event.type() == QEvent.Enter:
+                self._on_dut_hover(dut_index, True)
+            elif event.type() == QEvent.Leave:
+                self._on_dut_hover(dut_index, False)
+            elif event.type() == QEvent.MouseButtonPress:
+                self.dutClicked.emit(dut_index)
+
+        return super().eventFilter(obj, event)
+
+    def _on_dut_hover(self, dut_index: int, entering: bool) -> None:
+        """处理 DUT 悬停效果。"""
+        frame = self._dut_widgets.get(dut_index)
+        if frame is None:
+            return
+
+        # 如果当前有状态样式（不是默认样式），不处理悬停
+        if dut_index in self._dut_original_styles:
+            base_style = self._dut_original_styles[dut_index]
+            if entering:
+                # 使用 CSS hover 已经足够，这里可以添加额外效果
+                self._hovered_dut = dut_index
+            else:
+                self._hovered_dut = None
+
+    def _restore_dut_style(self, dut_index: int) -> None:
+        """恢复 DUT 默认样式。"""
+        frame = self._dut_widgets.get(dut_index)
+        if frame and dut_index in self._dut_original_styles:
+            frame.setStyleSheet(self._dut_original_styles[dut_index])
 
     def set_dut_status(self, dut_index: int, status: str) -> None:
         """设置单个 DUT 的状态。
@@ -617,8 +722,18 @@ class DutGridPanel(QWidget):
         Args:
             dut_index: DUT 编号 (1-8)
             status: 状态 ('offline', 'online', 'testing', 'success', 'failed', 'error')
+            timestamp: 可选的时间戳字符串（格式如 "19:35:03"）
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("[DutGridPanel] set_dut_status called: dut=%d, status=%s", dut_index, status)
+        logger.info("[DutGridPanel] _dut_widgets keys: %s", list(self._dut_widgets.keys()))
+        logger.info("[DutGridPanel] _dut_status_labels keys: %s", list(self._dut_status_labels.keys()))
+        logger.info("[DutGridPanel] _dut_indicators keys: %s", list(self._dut_indicators.keys()))
+
         if dut_index not in self._dut_widgets:
+            logger.warning("[DutGridPanel] dut_index %d not in _dut_widgets", dut_index)
             return
 
         # 状态文本映射
@@ -641,40 +756,67 @@ class DutGridPanel(QWidget):
         status_text = status_texts.get(status, status)
         status_label.setText(status_text)
 
-        # 更新边框和背景颜色
-        colors = {
-            "offline": (COLOR_BORDER, COLOR_BG_TERTIARY),
-            "online": (COLOR_SUCCESS_BORDER, COLOR_SUCCESS_BG),
-            "testing": (COLOR_WARNING_BORDER, "#f59e0b20"),
-            "success": (COLOR_SUCCESS_BORDER, COLOR_SUCCESS_BG),
-            "failed": (COLOR_ERROR_BORDER, COLOR_ERROR_BG),
-            "error": (COLOR_ERROR_BORDER, COLOR_ERROR_BG),
+        # 左边框颜色
+        border_colors = {
+            "offline": "#6b7280",  # 灰色
+            "online": "#22c55e",   # 绿色
+            "testing": "#f59e0b",  # 橙色
+            "success": "#22c55e",  # 绿色
+            "failed": "#ef4444",   # 红色
+            "error": "#ef4444",    # 红色
         }
-        border_color, bg_color = colors.get(status, (COLOR_BORDER, COLOR_BG_TERTIARY))
+        border_color = border_colors.get(status, "#6b7280")
+
+        # 背景颜色
+        bg_colors = {
+            "offline": "#1a1a24",
+            "online": "#1a1a24",
+            "testing": "#1a1a24",
+            "success": "#1a1a24",
+            "failed": "#1a1a24",
+            "error": "#1a1a24",
+        }
+        bg_color = bg_colors.get(status, "#1a1a24")
 
         text_colors = {
-            "offline": COLOR_TEXT_MUTED,
-            "online": COLOR_SUCCESS,
-            "testing": COLOR_WARNING,
-            "success": COLOR_SUCCESS,
-            "failed": COLOR_ERROR,
-            "error": COLOR_ERROR,
+            "offline": "#6b7280",
+            "online": "#22c55e",
+            "testing": "#f59e0b",
+            "success": "#22c55e",
+            "failed": "#ef4444",
+            "error": "#ef4444",
         }
-        text_color = text_colors.get(status, COLOR_TEXT_MUTED)
+        text_color = text_colors.get(status, "#6b7280")
 
+        # 使用 f-string 动态生成样式（注意 f 前缀！）
         frame.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dut_{dut_index} {{
                 background-color: {bg_color};
-                border: 1px solid {border_color};
-                border-radius: {RADIUS_SM};
+                border: 1px solid #2a2e3d;
+                border-left: 3px solid {border_color};
+                border-radius: 4px;
+            }}
+            QFrame#dut_{dut_index}:hover {{
+                background-color: #222530;
             }}
         """)
-        status_label.setStyleSheet(f"color: {text_color}; font-size: {FONT_SIZE_XS};")
+        # 保存原始样式供悬停恢复使用
+        self._dut_original_styles[dut_index] = frame.styleSheet()
+        status_label.setStyleSheet(f"color: {text_color}; font-size: 10px;")
+
+        # 更新时间显示（如果传入了时间戳）
+        if hasattr(self, '_dut_time_labels') and dut_index in self._dut_time_labels:
+            from datetime import datetime
+            time_str = datetime.now().strftime("%H:%M:%S")
+            self._dut_time_labels[dut_index].setText(time_str)
+            self._dut_time_labels[dut_index].setStyleSheet("color: #4b5563; font-size: 9px;")
 
     def reset_all(self) -> None:
         """重置所有显示的 DUT 状态为离线。"""
         for dut_index in self._dut_indices:
             self.set_dut_status(dut_index, "offline")
+        # 重置悬停状态
+        self._hovered_dut = None
 
 
 class TestProgressPanel(QWidget):
@@ -706,19 +848,19 @@ class TestProgressPanel(QWidget):
         """设置 UI。"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACING_SM)
+        layout.setSpacing(6)
 
         # 状态行
         status_layout = QHBoxLayout()
-        status_layout.setSpacing(SPACING_SM)
+        status_layout.setSpacing(6)
 
-        self._status_indicator = StatusIndicator("offline", 10)
+        self._status_indicator = StatusIndicator("offline", 8)
         status_layout.addWidget(self._status_indicator)
 
         self._status_label = QLabel("等待测试")
-        self._status_label.setStyleSheet(f"""
-            color: {COLOR_TEXT_MUTED};
-            font-size: {FONT_SIZE_SM};
+        self._status_label.setStyleSheet("""
+            color: #6b7280;
+            font-size: 11px;
             font-weight: 500;
         """)
         status_layout.addWidget(self._status_label)
@@ -728,17 +870,17 @@ class TestProgressPanel(QWidget):
 
         # 进度条
         self._progress_bar = QProgressBar()
-        self._progress_bar.setFixedHeight(8)
+        self._progress_bar.setFixedHeight(6)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {COLOR_BG_TERTIARY};
                 border: none;
-                border-radius: 4px;
+                border-radius: 3px;
             }}
             QProgressBar::chunk {{
                 background-color: {COLOR_SUCCESS};
-                border-radius: 4px;
+                border-radius: 3px;
             }}
         """)
         self._progress_bar.setValue(0)
@@ -746,22 +888,17 @@ class TestProgressPanel(QWidget):
 
         # 结果行（根据 dut_indices 显示）
         results_layout = QHBoxLayout()
-        # 根据数量调整间距
-        if len(self._dut_indices) <= 2:
-            results_layout.setSpacing(SPACING_LG)
-        else:
-            results_layout.setSpacing(SPACING_XS)
-        # 添加起始弹性空间保持居中
+        results_layout.setSpacing(8)
         results_layout.addStretch()
 
         for dut_index in self._dut_indices:
             result_label = QLabel("-")
-            result_label.setFixedWidth(36)
+            result_label.setFixedWidth(28)
             result_label.setAlignment(Qt.AlignCenter)
-            result_label.setStyleSheet(f"""
-                color: {COLOR_TEXT_MUTED};
-                font-size: {FONT_SIZE_SM};
-                font-family: {FONT_MONO};
+            result_label.setStyleSheet("""
+                color: #6b7280;
+                font-size: 11px;
+                font-family: monospace;
             """)
             self._result_labels[dut_index] = result_label
             results_layout.addWidget(result_label)

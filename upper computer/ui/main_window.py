@@ -124,7 +124,6 @@ class MainWindow(QMainWindow):
         self._flow_icons: dict[GatewayState, QLabel] | None = None
         self._flow_nodes: dict[GatewayState, QWidget] | None = None
         self._arm_connection: ConnectionStatus | None = None
-        self._tc3720_connection: ConnectionStatus | None = None
         self._alarm_card: Card | None = None
         self._task_group_label: QLabel | None = None
         self._dut_connections: dict[int, ConnectionStatus] = {}  # DUT 状态字典
@@ -190,84 +189,73 @@ class MainWindow(QMainWindow):
     def _create_header(self) -> QWidget:
         """创建标题栏。"""
         header = QWidget()
-        header.setFixedHeight(56)
+        header.setFixedHeight(52)
         header.setStyleSheet(f"""
             QWidget {{
-                background-color: {COLOR_BG_SECONDARY};
-                border-bottom: 1px solid {COLOR_BORDER};
+                background-color: #0d1117;
+                border-bottom: 1px solid #21262d;
             }}
         """)
 
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(SPACING_LG, 0, SPACING_LG, 0)
+        layout.setContentsMargins(20, 0, 16, 0)
 
-        # 标题
+        # 标题 - 简洁有力
         title_label = QLabel("机械臂中转网关")
-        title_label.setStyleSheet(f"""
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {FONT_SIZE_LG};
-            font-weight: bold;
+        title_label.setStyleSheet("""
+            color: #e6edf3;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
         """)
         layout.addWidget(title_label)
 
         layout.addStretch()
 
-        # 服务状态（紧凑显示）
-        status_layout = QHBoxLayout()
-        status_layout.setSpacing(SPACING_SM)
+        # 服务状态 - 紧凑胶囊样式
+        self._header_status_label = QLabel("● 服务未启动")
+        self._header_status_label.setStyleSheet("""
+            color: #6e7681;
+            font-size: 12px;
+            padding: 5px 14px;
+            background-color: #21262d;
+            border-radius: 14px;
+        """)
+        layout.addWidget(self._header_status_label)
 
-        self._header_service_indicator = StatusIndicator("offline", 8)
-        status_layout.addWidget(self._header_service_indicator)
+        layout.addSpacing(12)
 
-        self._header_status_label = QLabel("服务未启动")
-        self._header_status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        status_layout.addWidget(self._header_status_label)
-
-        layout.addLayout(status_layout)
-
-        # 分隔线
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet(f"background-color: {COLOR_BORDER}; max-width: 1px;")
-        sep.setFixedWidth(1)
-        layout.addWidget(sep)
-
-        # 统计信息（紧凑）
+        # 统计信息 - 简化显示
         stats_layout = QHBoxLayout()
-        stats_layout.setSpacing(SPACING_MD)
+        stats_layout.setSpacing(16)
 
-        self._header_total_label = QLabel("总数: 0")
-        self._header_total_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM};")
+        self._header_total_label = QLabel("0 条")
+        self._header_total_label.setStyleSheet("color: #6e7681; font-size: 12px;")
         stats_layout.addWidget(self._header_total_label)
 
         self._header_success_label = QLabel("✓ 0")
-        self._header_success_label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM};")
+        self._header_success_label.setStyleSheet("color: #22c55e; font-size: 12px; font-weight: 500;")
         stats_layout.addWidget(self._header_success_label)
 
         self._header_failed_label = QLabel("✗ 0")
-        self._header_failed_label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: {FONT_SIZE_SM};")
+        self._header_failed_label.setStyleSheet("color: #ef4444; font-size: 12px; font-weight: 500;")
         stats_layout.addWidget(self._header_failed_label)
 
         layout.addLayout(stats_layout)
 
-        # 分隔线
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.VLine)
-        sep2.setStyleSheet(f"background-color: {COLOR_BORDER}; max-width: 1px;")
-        sep2.setFixedWidth(1)
-        layout.addWidget(sep2)
+        layout.addSpacing(12)
 
-        # 启动/停止按钮
+        # 启动/停止按钮 - 优化样式
         self._service_btn = QPushButton("▶ 启动服务")
-        self._service_btn.setFixedSize(100, 32)
+        self._service_btn.setFixedSize(90, 30)
         self._service_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {COLOR_SUCCESS};
                 color: white;
                 border: none;
                 border-radius: {RADIUS_SM};
-                font-size: {FONT_SIZE_SM};
-                font-weight: bold;
+                font-size: 12px;
+                font-weight: 600;
             }}
             QPushButton:hover {{
                 background-color: #16a34a;
@@ -286,7 +274,7 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACING_MD)
+        layout.setSpacing(8)  # 紧凑间距
 
         # 测试控制卡片（核心功能）
         test_control_card = self._create_test_control_card()
@@ -310,38 +298,38 @@ class MainWindow(QMainWindow):
 
     def _create_test_control_card(self) -> QWidget:
         """创建测试控制卡片（核心主动测试功能）。"""
-        card = Card("⏵ 主动测试控制")
+        card = Card("测试控制")
         layout = card.content_layout()
-        layout.setSpacing(SPACING_SM)
+        layout.setSpacing(8)
 
         # 获取已配置的 DUT 列表
         self._configured_duts = get_configured_dut_indices(self._config)
 
-        # 测试说明
+        # 测试说明（紧凑）
         if self._configured_duts:
-            desc_text = f"选择要测试的板子（已配置 {len(self._configured_duts)} 个）"
+            desc_text = f"已配置 {len(self._configured_duts)} 个板子"
         else:
-            desc_text = "当前无板子配置，请在 config.json 中配置 DUT IP"
+            desc_text = "请在 config.json 中配置 DUT"
         desc_label = QLabel(desc_text)
-        desc_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
+        desc_label.setStyleSheet("color: #6b7280; font-size: 11px;")
         layout.addWidget(desc_label)
 
-        # 板子复选框 - 只显示已配置的 DUT，增加间距使其更清晰
+        # 板子复选框 - 紧凑布局
         self._board_checkboxes: list[QCheckBox] = []
         checkbox_row1 = QHBoxLayout()
-        checkbox_row1.setSpacing(SPACING_MD)  # 增加间距
+        checkbox_row1.setSpacing(12)
         checkbox_row2 = QHBoxLayout()
-        checkbox_row2.setSpacing(SPACING_MD)
+        checkbox_row2.setSpacing(12)
 
         checkbox_style = f"""
             QCheckBox {{
                 color: {COLOR_TEXT_PRIMARY};
-                font-size: {FONT_SIZE_SM};
-                spacing: 6px;
+                font-size: 12px;
+                spacing: 4px;
             }}
             QCheckBox::indicator {{
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 border-radius: 3px;
                 border: 1px solid {COLOR_BORDER};
                 background-color: {COLOR_BG_TERTIARY};
@@ -357,41 +345,33 @@ class MainWindow(QMainWindow):
         """
 
         for i, dut_index in enumerate(self._configured_duts):
-            checkbox = QCheckBox(f"板子{dut_index}")
-            # 默认勾选所有已配置的 DUT
+            checkbox = QCheckBox(f"#{dut_index}")
             checkbox.setChecked(True)
             checkbox.setStyleSheet(checkbox_style)
             self._board_checkboxes.append(checkbox)
-            # 每行最多 4 个
             if i < 4:
                 checkbox_row1.addWidget(checkbox)
             else:
                 checkbox_row2.addWidget(checkbox)
 
-        # 添加弹性空间使复选框居中
         checkbox_row1.addStretch()
-        checkbox_row1.insertStretch(0)
         layout.addLayout(checkbox_row1)
         layout.addLayout(checkbox_row2)
 
-        # 快捷按钮行
+        # 快捷按钮行（紧凑）
         quick_btn_row = QHBoxLayout()
-        quick_btn_row.setSpacing(SPACING_SM)
+        quick_btn_row.setSpacing(8)
 
-        # 动态调整按钮文字和宽度
         dut_count = len(self._configured_duts)
-        select_all_text = f"全选({dut_count})"
-        # 根据文字长度调整按钮宽度
-        btn_width = max(70, len(select_all_text) * 14 + 20)
 
-        select_all_btn = QPushButton(select_all_text)
-        select_all_btn.setFixedSize(btn_width, 26)
+        select_all_btn = QPushButton(f"全选({dut_count})")
+        select_all_btn.setFixedSize(64, 24)
         select_all_btn.setStyleSheet(secondary_button_style())
         select_all_btn.clicked.connect(self._on_select_all_boards)
         quick_btn_row.addWidget(select_all_btn)
 
         clear_btn = QPushButton("清空")
-        clear_btn.setFixedSize(56, 26)
+        clear_btn.setFixedSize(48, 24)
         clear_btn.setStyleSheet(secondary_button_style())
         clear_btn.clicked.connect(self._on_clear_all_boards)
         quick_btn_row.addWidget(clear_btn)
@@ -399,28 +379,28 @@ class MainWindow(QMainWindow):
         quick_btn_row.addStretch()
         layout.addLayout(quick_btn_row)
 
-        # 触发测试按钮（大号主按钮）
-        self._trigger_btn = QPushButton("▶ 主动触发测试")
-        self._trigger_btn.setFixedHeight(44)
+        # 触发测试按钮
+        self._trigger_btn = QPushButton("▶ 触发测试")
+        self._trigger_btn.setFixedHeight(40)
         self._trigger_btn.setStyleSheet(test_button_style())
         self._trigger_btn.clicked.connect(self._on_trigger_test)
         layout.addWidget(self._trigger_btn)
 
-        # 提示信息
-        hint_label = QLabel("💡 发送 @TEST_DONE 触发机械臂开始测试流程")
-        hint_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_XS};")
+        # 提示信息（紧凑）
+        hint_label = QLabel("💡 发送 @TEST_DONE 指令")
+        hint_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         layout.addWidget(hint_label)
 
         return card
 
     def _create_log_card(self) -> QWidget:
         """创建通讯日志卡片。"""
-        card = Card("📋 通讯日志")
+        card = Card("通讯日志")
         layout = card.content_layout()
 
-        # 工具栏
+        # 工具栏（紧凑）
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(SPACING_SM)
+        toolbar.setSpacing(8)
 
         self._auto_scroll_combo = QComboBox()
         self._auto_scroll_combo.addItems(["自动滚动", "固定滚动"])
@@ -432,8 +412,8 @@ class MainWindow(QMainWindow):
                 color: {COLOR_TEXT_PRIMARY};
                 border: 1px solid {COLOR_BORDER};
                 border-radius: {RADIUS_SM};
-                padding: 4px 8px;
-                font-size: {FONT_SIZE_SM};
+                padding: 3px 6px;
+                font-size: 11px;
             }}
         """)
         toolbar.addWidget(self._auto_scroll_combo)
@@ -441,13 +421,13 @@ class MainWindow(QMainWindow):
         toolbar.addStretch()
 
         clear_btn = QPushButton("清空")
-        clear_btn.setFixedSize(50, 24)
+        clear_btn.setFixedSize(44, 22)
         clear_btn.setStyleSheet(secondary_button_style())
         clear_btn.clicked.connect(self._on_clear_log)
         toolbar.addWidget(clear_btn)
 
         export_btn = QPushButton("导出")
-        export_btn.setFixedSize(50, 24)
+        export_btn.setFixedSize(44, 22)
         export_btn.setStyleSheet(secondary_button_style())
         export_btn.clicked.connect(self._on_export_log)
         toolbar.addWidget(export_btn)
@@ -464,8 +444,8 @@ class MainWindow(QMainWindow):
                 border: 1px solid {COLOR_BORDER};
                 border-radius: {RADIUS_MD};
                 font-family: {FONT_MONO};
-                font-size: {FONT_SIZE_SM};
-                padding: {SPACING_SM};
+                font-size: 11px;
+                padding: 6px;
             }}
         """)
         layout.addWidget(self._log_text, 1)
@@ -477,137 +457,192 @@ class MainWindow(QMainWindow):
         return self._create_right_panel()
 
     def _create_right_panel(self) -> QWidget:
-        """创建右侧面板（状态区）。"""
+        """创建右侧面板（状态区）。
+
+        布局优化：
+        - 上部：连接状态 + DUT状态（固定高度，不滚动）
+        - 中部：任务详情（紧凑布局）
+        - 下部：历史统计（弹性占用剩余空间）
+        - 告警：合并到任务详情行内
+        """
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACING_MD)
+        layout.setSpacing(8)  # 减小卡片间距
 
-        # 连接状态卡片（简化版）
-        conn_card = Card("设备连接状态")
+        # ===== 顶部区域：连接状态 + DUT状态（水平布局）=====
+        top_container = QWidget()
+        top_layout = QHBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+
+        # 连接状态卡片（只显示机械臂）
+        conn_card = Card("设备连接")
         conn_layout = conn_card.content_layout()
 
-        # 机械臂和 TC3720 连接状态
         conn_row = QHBoxLayout()
-        conn_row.setSpacing(SPACING_LG)
+        conn_row.setSpacing(16)
 
         self._arm_connection = ConnectionStatus("机械臂")
         conn_row.addWidget(self._arm_connection)
 
-        self._tc3720_connection = ConnectionStatus("TC3720")
-        conn_row.addWidget(self._tc3720_connection)
-
         conn_row.addStretch()
         conn_layout.addLayout(conn_row)
+        top_layout.addWidget(conn_card, 0)  # 固定宽度，不弹性
 
-        layout.addWidget(conn_card)
-
-        # DUT 状态网格卡片（核心状态显示）
-        dut_card = Card("DUT 状态监控")
+        # DUT 状态网格卡片
+        dut_card = Card("DUT 状态")
         dut_layout = dut_card.content_layout()
 
-        # 只显示已配置的 DUT
         configured_duts = get_configured_dut_indices(self._config)
         self._dut_grid_panel = DutGridPanel(dut_indices=configured_duts)
         dut_layout.addWidget(self._dut_grid_panel)
+        top_layout.addWidget(dut_card, 2)  # 弹性比例2（更宽）
 
-        layout.addWidget(dut_card)
+        layout.addWidget(top_container)
 
-        # 当前任务卡片
-        self._task_card = Card("当前任务详情")
+        # ===== 中部区域：任务详情 + 告警（合并为一行）=====
+        middle_container = QWidget()
+        middle_layout = QHBoxLayout(middle_container)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        middle_layout.setSpacing(8)
+
+        # 当前任务卡片（紧凑）
+        self._task_card = Card("任务详情")
         task_layout = self._task_card.content_layout()
-        task_layout.setSpacing(SPACING_SM)
+        task_layout.setSpacing(6)
 
-        # 任务信息网格
-        task_info_layout = QGridLayout()
-        task_info_layout.setSpacing(SPACING_MD)
+        # 任务信息 - 单行紧凑布局
+        task_row1 = QHBoxLayout()
+        task_row1.setSpacing(12)
 
-        # Group 行
-        group_label = QLabel("Group:")
-        group_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        task_info_layout.addWidget(group_label, 0, 0)
-
+        # Group
+        g_layout = QVBoxLayout()
+        g_layout.setSpacing(2)
+        g_label = QLabel("Group")
+        g_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         self._task_group_label = QLabel("-")
-        self._task_group_label.setStyleSheet(f"color: {COLOR_ACCENT}; font-size: {FONT_SIZE_SM}; font-weight: bold; font-family: {FONT_MONO};")
-        task_info_layout.addWidget(self._task_group_label, 0, 1)
+        self._task_group_label.setStyleSheet("color: #3b82f6; font-size: 12px; font-family: monospace; font-weight: 600;")
+        g_layout.addWidget(g_label)
+        g_layout.addWidget(self._task_group_label)
+        task_row1.addLayout(g_layout)
 
-        # Bitmask 行
-        bitmask_label = QLabel("Bitmask:")
-        bitmask_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        task_info_layout.addWidget(bitmask_label, 0, 2)
-
+        # Bitmask
+        b_layout = QVBoxLayout()
+        b_layout.setSpacing(2)
+        b_label = QLabel("Bitmask")
+        b_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         self._task_bitmask_label = QLabel("-")
-        self._task_bitmask_label.setStyleSheet(f"color: {COLOR_ACCENT}; font-size: {FONT_SIZE_SM}; font-weight: bold; font-family: {FONT_MONO};")
-        task_info_layout.addWidget(self._task_bitmask_label, 0, 3)
+        self._task_bitmask_label.setStyleSheet("color: #3b82f6; font-size: 12px; font-family: monospace; font-weight: 600;")
+        b_layout.addWidget(b_label)
+        b_layout.addWidget(self._task_bitmask_label)
+        task_row1.addLayout(b_layout)
 
-        # ErrorCodes 行
-        error_label = QLabel("ErrorCodes:")
-        error_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        task_info_layout.addWidget(error_label, 1, 0)
-
+        # ErrorCodes
+        e_layout = QVBoxLayout()
+        e_layout.setSpacing(2)
+        e_label = QLabel("ErrorCodes")
+        e_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         self._task_errorcodes_label = QLabel("-")
-        self._task_errorcodes_label.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_SM}; font-family: {FONT_MONO};")
-        task_info_layout.addWidget(self._task_errorcodes_label, 1, 1, 1, 3)
+        self._task_errorcodes_label.setStyleSheet("color: #e8eaed; font-size: 11px; font-family: monospace;")
+        e_layout.addWidget(e_label)
+        e_layout.addWidget(self._task_errorcodes_label)
+        task_row1.addLayout(e_layout)
 
-        # 耗时行
-        duration_label = QLabel("耗时:")
-        duration_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        task_info_layout.addWidget(duration_label, 2, 0)
+        task_row1.addStretch()
+        task_layout.addLayout(task_row1)
 
+        # 第二行：耗时 + 状态
+        task_row2 = QHBoxLayout()
+        task_row2.setSpacing(12)
+
+        d_layout = QVBoxLayout()
+        d_layout.setSpacing(2)
+        d_label = QLabel("耗时")
+        d_label.setStyleSheet("color: #6b7280; font-size: 10px;")
         self._task_duration_label = QLabel("-")
-        self._task_duration_label.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_SM}; font-family: {FONT_MONO};")
-        task_info_layout.addWidget(self._task_duration_label, 2, 1)
+        self._task_duration_label.setStyleSheet("color: #e8eaed; font-size: 12px; font-family: monospace;")
+        d_layout.addWidget(d_label)
+        d_layout.addWidget(self._task_duration_label)
+        task_row2.addLayout(d_layout)
 
-        # 网关状态
-        gw_status_label = QLabel("状态:")
-        gw_status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        task_info_layout.addWidget(gw_status_label, 2, 2)
+        s_layout = QVBoxLayout()
+        s_layout.setSpacing(2)
+        s_label = QLabel("状态")
+        s_label.setStyleSheet("color: #6b7280; font-size: 10px;")
+
+        # 状态标签：带背景和emoji
+        self._gw_status_container = QWidget()
+        self._gw_status_container.setStyleSheet("""
+            background-color: #252530;
+            border-radius: 4px;
+            padding: 2px 8px;
+        """)
+        status_container_layout = QHBoxLayout(self._gw_status_container)
+        status_container_layout.setContentsMargins(4, 2, 4, 2)
+        status_container_layout.setSpacing(4)
+
+        self._gw_status_emoji = QLabel("⚪")
+        self._gw_status_emoji.setStyleSheet("font-size: 10px;")
+        status_container_layout.addWidget(self._gw_status_emoji)
 
         self._gw_status_label = QLabel("空闲")
-        self._gw_status_label.setStyleSheet(f"color: {COLOR_IDLE}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
-        task_info_layout.addWidget(self._gw_status_label, 2, 3)
+        self._gw_status_label.setStyleSheet("color: #6b7280; font-size: 11px; font-weight: 600;")
+        status_container_layout.addWidget(self._gw_status_label)
 
-        task_layout.addLayout(task_info_layout)
-        layout.addWidget(self._task_card)
+        s_layout.addWidget(s_label)
+        s_layout.addWidget(self._gw_status_container)
+        task_row2.addLayout(s_layout)
 
-        # 告警卡片
-        self._alarm_card = Card("⚠ 告警信息")
+        task_row2.addStretch()
+        task_layout.addLayout(task_row2)
+
+        middle_layout.addWidget(self._task_card, 3)  # 弹性比例3
+
+        # 告警卡片（紧凑，仅在有告警时显示）
+        self._alarm_card = Card("告警")
         self._alarm_layout = self._alarm_card.content_layout()
-        self._alarm_label = QLabel("无告警")
-        self._alarm_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
-        self._alarm_layout.addWidget(self._alarm_label)
+        self._alarm_layout.setSpacing(6)
 
-        self._clear_alarm_btn = QPushButton("清除告警")
-        self._clear_alarm_btn.setFixedHeight(28)
-        self._clear_alarm_btn.setVisible(False)
-        self._clear_alarm_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLOR_ERROR};
+        alarm_content = QHBoxLayout()
+        alarm_content.setSpacing(8)
+
+        self._alarm_label = QLabel("无")
+        self._alarm_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        alarm_content.addWidget(self._alarm_label)
+
+        self._clear_alarm_btn = QPushButton("清除")
+        self._clear_alarm_btn.setFixedSize(48, 24)
+        self._clear_alarm_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef4444;
                 color: white;
                 border: none;
-                border-radius: {RADIUS_SM};
-                font-size: {FONT_SIZE_SM};
-            }}
-            QPushButton:hover {{
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
                 background-color: #dc2626;
-            }}
+            }
         """)
         self._clear_alarm_btn.clicked.connect(self._on_clear_alarm)
-        self._alarm_layout.addWidget(self._clear_alarm_btn)
+        alarm_content.addWidget(self._clear_alarm_btn)
+        self._alarm_layout.addLayout(alarm_content)
         self._alarm_card.setVisible(False)
+        self._alarm_card.setFixedWidth(140)  # 固定宽度，紧凑
 
-        layout.addWidget(self._alarm_card)
+        middle_layout.addWidget(self._alarm_card)
 
-        # 历史统计卡片
+        layout.addWidget(middle_container)
+
+        # ===== 底部区域：历史统计（弹性占用）=====
         stats_card = Card("历史统计")
         stats_layout = stats_card.content_layout()
 
         self._stats_panel = StatsPanel()
         stats_layout.addWidget(self._stats_panel)
 
-        layout.addWidget(stats_card)
-
-        layout.addStretch()
+        layout.addWidget(stats_card, 1)  # 弹性扩展，填满剩余空间
 
         return panel
 
@@ -691,8 +726,7 @@ class MainWindow(QMainWindow):
                 config=self._gateway_config,
                 on_state_changed=self._on_gateway_state_changed,
                 on_arm_connected=self._on_arm_connected,
-                on_3720_status_changed=self._on_3720_status_changed,
-                on_dut_status_changed=self._on_dut_status_changed,  # 单个 DUT 状态回调
+                on_dut_status_changed=self._on_dut_status_changed,
                 on_record=self._on_transfer_record,
                 on_error=self._on_gateway_error,
             )
@@ -737,8 +771,8 @@ class MainWindow(QMainWindow):
                     color: white;
                     border: none;
                     border-radius: {RADIUS_SM};
-                    font-size: {FONT_SIZE_SM};
-                    font-weight: bold;
+                    font-size: 12px;
+                    font-weight: 600;
                 }}
                 QPushButton:hover {{
                     background-color: #dc2626;
@@ -746,18 +780,83 @@ class MainWindow(QMainWindow):
             """)
 
             # 更新标题栏状态
-            self._header_service_indicator.set_status("online")
-            self._header_status_label.setText("服务运行中")
-            self._header_status_label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM};")
+            self._header_status_label.setText("● 服务运行中")
+            self._header_status_label.setStyleSheet("""
+                color: #22c55e;
+                font-size: 12px;
+                padding: 5px 14px;
+                background-color: #21262d;
+                border-radius: 14px;
+            """)
 
             # 更新网关状态标签
             if hasattr(self, '_gw_status_label'):
                 self._gw_status_label.setText("空闲")
-                self._gw_status_label.setStyleSheet(f"color: {COLOR_SUCCESS}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
+                if hasattr(self, '_gw_status_emoji'):
+                    self._gw_status_emoji.setText("⚪")
+
+            # 主动更新所有设备状态（解决初始状态不显示的问题）
+            self._update_all_device_status()
 
             self._log("系统", "中转服务已启动，等待机械臂连接...")
         else:
             self._log("错误", "启动网关失败")
+
+    def _update_all_device_status(self) -> None:
+        """主动更新所有设备状态（解决初始状态不显示的问题）。"""
+        if self._gateway is None:
+            logger.warning("_update_all_device_status: gateway 未初始化")
+            return
+
+        try:
+            # 获取所有设备状态摘要
+            status_summary = self._gateway.get_device_status_summary()
+            logger.info("[UI状态] 设备状态摘要: %s", status_summary)
+
+            # 检查 DUT 网格是否存在
+            if not hasattr(self, '_dut_grid_panel') or self._dut_grid_panel is None:
+                logger.warning("[UI状态] DUT网格未初始化")
+                return
+
+            # 检查摘要是否为空
+            if not status_summary:
+                logger.warning("[UI状态] 设备状态摘要为空，可能设备未连接")
+                return
+
+            # 检查 DUT 网格中实际包含的 DUT
+            dut_indices_in_grid = list(self._dut_grid_panel._dut_widgets.keys()) if hasattr(self._dut_grid_panel, '_dut_widgets') else []
+            logger.info("[UI状态] DUT网格中的DUT: %s", dut_indices_in_grid)
+
+            for dut_index, status_info in status_summary.items():
+                status = status_info.get("status", "offline").upper()
+                is_online = status_info.get("online", False)
+
+                # 映射状态
+                if status == "TESTING":
+                    dut_status = "testing"
+                elif status == "IDLE" and is_online:
+                    dut_status = "online"
+                elif status == "ERROR":
+                    dut_status = "error"
+                else:
+                    dut_status = "offline"
+
+                # 检查 DUT 是否在网格中
+                if dut_index not in dut_indices_in_grid:
+                    logger.warning("[UI状态] DUT#%d 不在UI网格中，跳过更新", dut_index)
+                    continue
+
+                logger.info("[UI状态] DUT#%d: status=%s, online=%s -> %s (调用set_dut_status)",
+                           dut_index, status, is_online, dut_status)
+
+                # 调用 DUT 网格面板更新状态
+                self._dut_grid_panel.set_dut_status(dut_index, dut_status)
+                logger.info("[UI状态] DUT#%d set_dut_status 调用完成", dut_index)
+
+        except Exception as e:
+            logger.error("更新设备状态失败: %s", e)
+            import traceback
+            traceback.print_exc()
 
     def _stop_gateway(self) -> None:
         """停止网关服务。"""
@@ -774,8 +873,8 @@ class MainWindow(QMainWindow):
                 color: white;
                 border: none;
                 border-radius: {RADIUS_SM};
-                font-size: {FONT_SIZE_SM};
-                font-weight: bold;
+                font-size: 12px;
+                font-weight: 600;
             }}
             QPushButton:hover {{
                 background-color: #16a34a;
@@ -783,15 +882,19 @@ class MainWindow(QMainWindow):
         """)
 
         # 更新标题栏状态
-        self._header_service_indicator.set_status("offline")
-        self._header_status_label.setText("服务未启动")
-        self._header_status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM};")
+        self._header_status_label.setText("● 服务未启动")
+        self._header_status_label.setStyleSheet("""
+            color: #6e7681;
+            font-size: 12px;
+            padding: 5px 14px;
+            background-color: #21262d;
+            border-radius: 14px;
+        """)
 
         self._log("系统", "中转服务已停止")
 
         # 重置显示
         self._arm_connection.set_status("offline")
-        self._tc3720_connection.set_status("offline")
 
         # 重置 DUT 网格
         if hasattr(self, '_dut_grid_panel'):
@@ -898,17 +1001,25 @@ class MainWindow(QMainWindow):
                 GatewayState.ERROR: "异常",
             }
             state_colors = {
-                GatewayState.IDLE: COLOR_IDLE,
-                GatewayState.FORWARDING: COLOR_INFO,
-                GatewayState.ERROR: COLOR_ERROR,
+                GatewayState.IDLE: "#6b7280",      # 灰色
+                GatewayState.FORWARDING: "#f59e0b", # 橙色
+                GatewayState.ERROR: "#ef4444",     # 红色
+            }
+            state_emojis = {
+                GatewayState.IDLE: "⚪",
+                GatewayState.FORWARDING: "🟡",
+                GatewayState.ERROR: "🔴",
             }
 
             if hasattr(self, '_gw_status_label') and self._gw_status_label is not None:
                 self._gw_status_label.setText(state_texts.get(state, "未知"))
                 self._gw_status_label.setStyleSheet(
-                    f"color: {state_colors.get(state, COLOR_TEXT_PRIMARY)}; "
-                    f"font-size: {FONT_SIZE_SM}; font-weight: 500;"
+                    f"color: {state_colors.get(state, '#e8eaed')}; "
+                    f"font-size: 11px; font-weight: 600;"
                 )
+                # 更新emoji
+                if hasattr(self, '_gw_status_emoji'):
+                    self._gw_status_emoji.setText(state_emojis.get(state, "⚪"))
 
             # 检查流程图控件是否已初始化
             if self._flow_icons is None or self._flow_nodes is None:
@@ -980,35 +1091,6 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    def _on_3720_status_changed(self, status: TC3720Status) -> None:
-        """3720 状态变化回调（线程安全）。
-
-        使用 QTimer.singleShot 将 UI 更新调度到主线程。
-        """
-        # 通过 QTimer.singleShot(0, ...) 确保在主线程执行
-        QTimer.singleShot(0, lambda s=status: self._update_3720_display_safe(s))
-
-    def _update_3720_display_safe(self, status: TC3720Status) -> None:
-        """更新 3720 显示（主线程安全）。"""
-        try:
-            # 检查控件是否已初始化
-            if self._tc3720_connection is None:
-                logger.warning("3720 显示控件未初始化，跳过状态更新")
-                return
-
-            status_map = {
-                TC3720Status.OFFLINE: "offline",
-                TC3720Status.IDLE: "online",
-                TC3720Status.TESTING: "testing",
-                TC3720Status.ERROR: "error",
-            }
-
-            self._tc3720_connection.set_status(status_map.get(status, "offline"))
-        except Exception as e:
-            logger.error("更新 3720 显示失败: %s", e)
-            import traceback
-            traceback.print_exc()
-
     def _on_dut_status_changed(self, dut_index: int, status: TC3720Status) -> None:
         """单个 DUT 状态变化回调（线程安全）。
 
@@ -1027,13 +1109,19 @@ class MainWindow(QMainWindow):
             status: 新状态。
         """
         try:
+            # 使用 status.value 进行映射，避免枚举对象不匹配的问题
+            status_value = status.value if hasattr(status, 'value') else str(status)
+
             status_map = {
-                TC3720Status.OFFLINE: "offline",
-                TC3720Status.IDLE: "online",
-                TC3720Status.TESTING: "testing",
-                TC3720Status.ERROR: "error",
+                "offline": "offline",
+                "idle": "online",
+                "testing": "testing",
+                "error": "error",
             }
-            mapped_status = status_map.get(status, "offline")
+            mapped_status = status_map.get(status_value, "offline")
+
+            logger.info("[UI回调] _update_dut_display_safe: dut=%d, status_value=%s -> mapped=%s",
+                       dut_index, status_value, mapped_status)
 
             # 更新 DUT 网格面板
             if hasattr(self, '_dut_grid_panel') and self._dut_grid_panel is not None:
@@ -1101,7 +1189,7 @@ class MainWindow(QMainWindow):
         success = self._stats["success"]
         failed = self._stats["failed"]
 
-        self._header_total_label.setText(f"总数: {total}")
+        self._header_total_label.setText(f"{total} 条")
         self._header_success_label.setText(f"✓ {success}")
         self._header_failed_label.setText(f"✗ {failed}")
 
@@ -1124,18 +1212,18 @@ class MainWindow(QMainWindow):
                 logger.warning("告警显示控件未初始化，跳过错误更新")
                 return
 
-            # 显示告警
+            # 显示告警（简化文本以适应紧凑布局）
             self._alarm_card.setVisible(True)
             if hasattr(self, '_clear_alarm_btn') and self._clear_alarm_btn:
                 self._clear_alarm_btn.setVisible(True)
-            self._alarm_label.setText(f"[{error_code.value}] {message}")
-            self._alarm_label.setStyleSheet(f"color: {COLOR_ERROR}; font-size: {FONT_SIZE_SM};")
+            # 截断过长的消息
+            display_msg = message[:30] + "..." if len(message) > 30 else message
+            self._alarm_label.setText(f"[{error_code.value}] {display_msg}")
+            self._alarm_label.setStyleSheet("color: #ef4444; font-size: 11px;")
 
             # 告警指示灯
             if error_code == ErrorCode.ARM_DISCONNECTED:
                 self._arm_connection.set_status("error")
-            elif error_code == ErrorCode.TC3720_ERROR or error_code == ErrorCode.TIMEOUT_3720:
-                self._tc3720_connection.set_status("error")
 
             self._log("错误", f"[{error_code.value}] {message}")
         except Exception as e:

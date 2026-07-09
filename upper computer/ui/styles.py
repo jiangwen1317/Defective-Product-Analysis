@@ -283,7 +283,7 @@ QToolTip {{
 """
 
 # 卡片容器样式
-def card_style(bg_color: str = COLOR_BG_SECONDARY, border_color: str = COLOR_BORDER) -> str:
+def card_style(bg_color: str = "#161822", border_color: str = "#2a2e3d") -> str:
     """生成卡片样式。"""
     return f"""
     QFrame {{
@@ -315,16 +315,20 @@ def test_button_style(
         font-weight: bold;
         padding: 14px 24px;
         min-height: 48px;
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
     }}
     QPushButton:hover {{
         background-color: {hover_color};
+        box-shadow: 0 6px 20px rgba(34, 197, 94, 0.45);
     }}
     QPushButton:pressed {{
         background-color: {bg_color};
+        box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
     }}
     QPushButton:disabled {{
         background-color: {COLOR_TEXT_DISABLED};
         color: {COLOR_BG_SECONDARY};
+        box-shadow: none;
     }}
     """
 
