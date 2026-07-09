@@ -724,14 +724,6 @@ class DutGridPanel(QWidget):
             status: 状态 ('offline', 'online', 'testing', 'success', 'failed', 'error')
             timestamp: 可选的时间戳字符串（格式如 "19:35:03"）
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
-        logger.info("[DutGridPanel] set_dut_status called: dut=%d, status=%s", dut_index, status)
-        logger.info("[DutGridPanel] _dut_widgets keys: %s", list(self._dut_widgets.keys()))
-        logger.info("[DutGridPanel] _dut_status_labels keys: %s", list(self._dut_status_labels.keys()))
-        logger.info("[DutGridPanel] _dut_indicators keys: %s", list(self._dut_indicators.keys()))
-
         if dut_index not in self._dut_widgets:
             logger.warning("[DutGridPanel] dut_index %d not in _dut_widgets", dut_index)
             return

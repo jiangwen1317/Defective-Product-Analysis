@@ -1,78 +1,83 @@
-# 机械臂中转网关 v1.0
+# 机械臂中转网关 v2.0
 
-纯被动响应式全自动中转网关，实现机械臂与 3720 芯片测试仪之间的信号透传。
+主动触发模式中转网关，实现机械臂与 3720 芯片测试仪之间的信号透传与多 DUT 并发测试。
 
 ## 核心特性
 
-- **零人工干预**：仅响应机械臂发来的 `START_TEST` 请求，自动完成全套中转流程
+- **主动触发模式**：上位机发送 `@TEST_DONE` 触发机械臂，支持选板测试
+- **多 DUT 并发**：支持 8 个 DUT 同时测试，状态独立监控
 - **threading 架构**：使用 threading + socket 实现，与 PyQt5 原生集成
-- **分层解耦设计**：设备适配层、信号路由层、UI 层严格分离
-- **毫秒级日志**：完整记录每次信号收发内容、耗时、异常详情
+- **多种通信模式**：支持 TCP Server、TCP Client、串口三种机械臂连接方式
+- **自动重连**：设备断线自动重连，无需人工干预
+- **实时状态监控**：UI 实时显示设备连接状态、测试进度、错误码
 
 ## 项目结构
 
 ```
 upper computer/
-├── main.py                    # 程序入口
-├── config.py                  # 配置管理（支持热加载）
-├── config.json                # 配置文件
-├── requirements.txt           # 依赖清单
-├── protocol/
-│   ├── __init__.py
-│   └── arm_protocol.py        # 机械臂通讯协议处理器
-├── adapters/                  # 设备适配层
-│   ├── __init__.py
-│   ├── arm_adapter.py         # 机械臂适配器（TCP Server, threading）
-│   └── tc3720_adapter.py      # 3720 适配器（模拟器, threading）
-├── router/                    # 信号路由层
-│   ├── __init__.py
-│   └── gateway.py             # 核心中转网关（threading）
-└── ui/                        # UI 层
-    ├── __init__.py
-    └── main_window.py         # 主窗口（PyQt5 + threading）
+├── main.py                      # 程序入口
+├── config.py                    # 配置管理
+├── config.json                  # 配置文件
+├── requirements.txt             # 依赖清单
+│
+├── protocol/                    # 协议层
+│   └── arm_protocol.py          # 机械臂通讯协议处理器
+│
+├── adapters/                    # 适配器层
+│   ├── base_arm_adapter.py      # 机械臂适配器基类
+│   ├── arm_adapter.py           # 机械臂 TCP 适配器
+│   ├── serial_arm_adapter.py    # 机械臂串口适配器
+│   ├── tc3720_adapter.py        # 3720 测试仪模拟器
+│   └── tc3720_tcp_adapter.py    # 3720 测试仪 TCP 适配器
+│
+├── router/                      # 路由层
+│   ├── gateway.py               # 核心中转网关
+│   └── device_manager.py        # 多设备管理器
+│
+├── ui/                          # UI 层
+│   ├── main_window.py           # 主窗口（PyQt5）
+│   ├── components.py            # 通用组件库
+│   └── styles.py                # 样式系统
+│
+├── tests/                       # 测试
+│   ├── test_arm_protocol.py     # 协议测试
+│   ├── test_device_manager.py   # 设备管理测试
+│   ├── test_gateway.py          # 网关测试
+│   └── test_thread_safety.py    # 线程安全测试
+│
+└── docs/
+    └── 机械臂测试通信协议规范.md  # 通信协议文档
 ```
 
 ## 业务流程
 
+### 主动触发模式（v2.0 新增）
+
 ```
-┌─────────────┐     @START_TEST      ┌─────────────┐
-│   机械臂    │ ─────────────────►   │   网关      │
-│  (TCP Client)                       │             │
-└─────────────┘                       │             │
-                                      │  @START_TEST → 自动转发
-                                      │             │
-                                      │             │
-                                      │             │  等待结果...
-                                      │             │
-┌─────────────┐     @TEST_DONE       │             │
-│   机械臂    │ ◄─────────────────   │             │
-│             │                      │             │
-└─────────────┘                       └─────────────┘
-       ▲                                    │
-       │                                    ▼
-       │                          ┌─────────────────┐
-       │                          │  3720 测试仪    │
-       │                          │  (模拟/TBD)     │
-       │                          └─────────────────┘
+┌──────────┐  1. @TEST_DONE (选板)   ┌──────────┐  2. @START_TEST  ┌──────────┐
+│  上位机   │ ───────────────────►   │   机械臂   │ ──────────────►  │  3720    │
+│  (UI)    │                        │           │                  │  测试仪   │
+└──────────┘                        └──────────┘                   └──────────┘
+     ▲                                    │                              │
+     │                                    │                              │
+     │  6. @TEST_DONE (结果)              │  5. ErrorCode                 │
+     │────────────────────────────────────┼──────────────────────────────│
+     │                                    │                              │
 ```
 
 **完整流程**：
-1. **空闲监听**：网关等待机械臂连接
-2. **收到 START_TEST**：机械臂发送 `@START_TEST <Group> <Bitmask>+`
-3. **自动转发 3720**：网关立即转发测试请求
-4. **等待结果**：监听 3720 测试完成信号
-5. **自动回传**：收到结果后自动发送 `@TEST_DONE <Group> <EC1>...<EC8>+`
-6. **重置空闲**：回到待命状态，支持连续作业
+1. 用户在 UI 选择要测试的板子，点击"触发测试"
+2. 上位机发送 `@TEST_DONE 00 0001 0001 ...+`（0001=测试，0000=跳过）
+3. 机械臂收到后发送 `@START_TEST 00 10100000+`
+4. 网关解析 Bitmask，通知对应 DUT 的 3720 测试仪
+5. 3720 测试完成返回 ErrorCode
+6. 网关收集所有结果，发送 `@TEST_DONE` 给机械臂
 
-## 架构演进说明
+### 被动监听模式（兼容）
 
-### v1 → v3 架构变更说明
+传统模式：机械臂主动发送 `@START_TEST`，网关自动转发至 3720。
 
-| 版本 | 并发模型 | GUI 框架 | 说明 |
-|------|---------|---------|------|
-| v1 | asyncio | customtkinter | 初始版本，人工操作模式 |
-| v2 | asyncio | PyQt5 | 需求变更，事件驱动模式 |
-| **v3** | **threading** | **PyQt5** | **优化：与 PyQt5 原生集成，消除事件循环冲突** |
+## 架构说明
 
 ### 为什么选择 threading 而非 asyncio？
 
@@ -86,15 +91,26 @@ upper computer/
 
 **结论**：本项目是单连接、串行流程的上位机应用，threading 架构更简单、更易维护。
 
-### 为什么保持 PyQt5 而非 customtkinter？
+### 线程模型
 
-| 考量 | PyQt5 | customtkinter | 本项目适合度 |
-|------|-------|---------------|------------|
-| 实时状态更新 | 信号/槽原生支持 | `after()` 轮询 | **PyQt5 胜** |
-| 线程安全机制 | 原生信号跨线程 | 需额外处理 | **PyQt5 胜** |
-| 数据库分析项目 | - | 已使用 | 技术栈不统一（但可接受） |
-
-**结论**：上位机需要实时监控和状态更新，PyQt5 的信号槽机制更适合。
+```
+┌─────────────────────────────────────────────────────────┐
+│                     MainThread (GUI)                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ MainWindow  │  │ QTimer 100ms│  │ UI Components   │  │
+│  └──────┬──────┘  └─────────────┘  └─────────────────┘  │
+│         │                                                  │
+│         │ QTimer.singleShot(0, callback)                  │
+└─────────┼─────────────────────────────────────────────────┘
+          │ 回调线程安全
+┌─────────▼─────────────────────────────────────────────────┐
+│                    WorkerThreads                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
+│  │ArmAdapter   │  │TC3720Adapter│  │ReconnectLoop│       │
+│  │(Receive)    │  │(Receive)    │  │             │       │
+│  └─────────────┘  └─────────────┘  └─────────────┘       │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## 配置说明
 
@@ -103,17 +119,24 @@ upper computer/
 ```json
 {
     "gateway": {
-        "arm_host": "0.0.0.0",      // 机械臂监听地址
-        "arm_port": 8080,            // 机械臂监听端口
-        "tc3720_mode": "simulator",  // 3720 模式：simulator/tcp/serial/io
-        "tc3720_host": "192.168.1.101",
-        "tc3720_port": 9090,
-        "test_timeout": 30.0,        // 测试超时时间（秒）
-        "enable_debug": false        // 调试面板（生产环境为 false）
+        "arm_mode": "tcp_server",      // 通信模式: tcp_server | tcp_client | serial
+        "arm_host": "0.0.0.0",         // TCP Server 监听地址
+        "arm_port": 8080,              // TCP Server 监听端口
+        "arm_target_host": "",         // TCP Client 目标地址
+        "arm_target_port": 0,          // TCP Client 目标端口
+        "arm_reconnect_interval": 5.0, // 重连间隔（秒）
+        "arm_serial_port": "COM3",     // 串口名称
+        "arm_serial_baudrate": 115200, // 波特率
+        "test_timeout": 30.0,          // 测试超时时间（秒）
+        "enable_debug": true           // 调试模式
+    },
+    "devices": {                      // 多 DUT 配置
+        "dut1": {"ip": "192.168.1.101", "port": 9090, "name": "Board-1"},
+        "dut2": {"ip": "192.168.1.102", "port": 9090, "name": "Board-2"}
     },
     "ui": {
-        "window_width": 1000,
-        "window_height": 700,
+        "window_width": 1200,
+        "window_height": 800,
         "log_max_lines": 5000,
         "theme": "dark"
     }
@@ -130,45 +153,43 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## 依赖清单
+
+```
+PyQt5>=5.15.0      # GUI 框架
+pyserial>=3.5      # 串口通信
+```
+
 ## 协议格式
 
-### 机械臂指令
+详见 [docs/机械臂测试通信协议规范.md](docs/机械臂测试通信协议规范.md)
+
+### 核心指令
 
 | 指令 | 方向 | 格式 | 说明 |
 |------|------|------|------|
-| START_TEST | Client → Server | `@START_TEST <Group> <Bitmask>+` | 启动测试 |
-| TEST_DONE | Server → Client | `@TEST_DONE <Group> <EC1>...<EC8>+` | 测试完成 |
+| START_TEST | 机械臂→网关 | `@START_TEST <Group> <Bitmask>+` | 启动测试 |
+| TEST_DONE | 双向 | `@TEST_DONE <Group> <EC1>...<EC8>+` | 测试完成/触发 |
 
-**参数说明**：
-- `Group`：2位十六进制数（如 `00`、`FF`）
-- `Bitmask`：8位二进制字符串，从左至右对应 DUT #1 至 DUT #8
-- `EC1~EC8`：8个4位十六进制错误码，`0000` 表示通过
+### Bitmask 说明
 
-### 3720 适配器
+8位二进制字符串，从左至右对应 DUT #1 至 DUT #8：
+- `1` = 测试该 DUT
+- `0` = 跳过该 DUT
 
-当前阶段使用模拟器（`simulator`）模式。真实设备通信协议待确认后实现。
+示例：`10100000` = 测试 DUT #1 和 #3
 
-## 扩展说明
-
-### 添加新的 3720 通信模式
-
-1. 在 `adapters/tc3720_adapter.py` 中实现对应的通信方法
-2. 在 `router/gateway.py` 的 `_forward_to_3720` 中调用新方法
-3. 更新 `config.json` 中的 `tc3720_mode` 配置
-
-### 更换机械臂协议
-
-机械臂适配器 `adapters/arm_adapter.py` 负责协议解析，如协议有变更：
-1. 修改 `protocol/arm_protocol.py` 中的编解码逻辑
-2. 更新 `adapters/arm_adapter.py` 中的帧处理逻辑
-
-## 错误码说明
+### ErrorCode 说明
 
 | 错误码 | 含义 |
 |--------|------|
-| E001 | 机械臂通信超时 |
-| E002 | 3720 测试超时 |
-| E003 | 机械臂断连 |
-| E004 | 3720 设备错误 |
-| E005 | 协议解析错误 |
-| EEEE | 未知错误 |
+| 0000 | 测试通过 |
+| 非0000 | 测试失败（具体含义见 3720 设备文档） |
+| EEEE | 未知错误/超时 |
+
+## 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| v1.0 | - | 被动响应模式，纯透传 |
+| v2.0 | - | 主动触发模式，支持选板测试，多 DUT 并发 |

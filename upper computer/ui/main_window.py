@@ -811,7 +811,7 @@ class MainWindow(QMainWindow):
         try:
             # 获取所有设备状态摘要
             status_summary = self._gateway.get_device_status_summary()
-            logger.info("[UI状态] 设备状态摘要: %s", status_summary)
+            logger.debug("[UI状态] 设备状态摘要: %s", status_summary)
 
             # 检查 DUT 网格是否存在
             if not hasattr(self, '_dut_grid_panel') or self._dut_grid_panel is None:
@@ -825,7 +825,7 @@ class MainWindow(QMainWindow):
 
             # 检查 DUT 网格中实际包含的 DUT
             dut_indices_in_grid = list(self._dut_grid_panel._dut_widgets.keys()) if hasattr(self._dut_grid_panel, '_dut_widgets') else []
-            logger.info("[UI状态] DUT网格中的DUT: %s", dut_indices_in_grid)
+            logger.debug("[UI状态] DUT网格中的DUT: %s", dut_indices_in_grid)
 
             for dut_index, status_info in status_summary.items():
                 status = status_info.get("status", "offline").upper()
@@ -846,12 +846,12 @@ class MainWindow(QMainWindow):
                     logger.warning("[UI状态] DUT#%d 不在UI网格中，跳过更新", dut_index)
                     continue
 
-                logger.info("[UI状态] DUT#%d: status=%s, online=%s -> %s (调用set_dut_status)",
+                logger.debug("[UI状态] DUT#%d: status=%s, online=%s -> %s (调用set_dut_status)",
                            dut_index, status, is_online, dut_status)
 
                 # 调用 DUT 网格面板更新状态
                 self._dut_grid_panel.set_dut_status(dut_index, dut_status)
-                logger.info("[UI状态] DUT#%d set_dut_status 调用完成", dut_index)
+                logger.debug("[UI状态] DUT#%d set_dut_status 调用完成", dut_index)
 
         except Exception as e:
             logger.error("更新设备状态失败: %s", e)
@@ -1120,7 +1120,7 @@ class MainWindow(QMainWindow):
             }
             mapped_status = status_map.get(status_value, "offline")
 
-            logger.info("[UI回调] _update_dut_display_safe: dut=%d, status_value=%s -> mapped=%s",
+            logger.debug("[UI回调] _update_dut_display_safe: dut=%d, status_value=%s -> mapped=%s",
                        dut_index, status_value, mapped_status)
 
             # 更新 DUT 网格面板
@@ -1301,13 +1301,12 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
-    """启动 GUI 应用。"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    """启动 GUI 应用。
 
+    Note:
+        日志已在 main.py 的 setup_logging() 中配置，
+        此处不应重复配置。
+    """
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
