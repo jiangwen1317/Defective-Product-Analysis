@@ -3,6 +3,7 @@
 
 实现机械臂与 3720 测试仪之间的通信协议处理：
 - 解析机械臂的 @START_TEST 指令
+- 主动触发：发送 @TEST_DONE 通知机械臂开始测试流程
 - 向 3720 测试仪发送启动信号
 - 收集测试结果，组装 @TEST_DONE 返回给机械臂
 
@@ -685,10 +686,11 @@ class PassthroughGateway:
     def _send_error_to_arm(self, error_msg: str) -> None:
         """发送错误信息给机械臂。
 
-        发送 group=FF 的 TEST_DONE 表示测试异常中止。
+        发送 group="FF" 的 TEST_DONE 表示测试异常中止，
+        所有 DUT 标记为错误码 EEEE。
 
         Args:
-            error_msg: 错误消息。
+            error_msg: 错误消息（记录到日志，当前协议不发送给机械臂）。
         """
         logger.error("[ARM-TX] 错误: %s", error_msg)
 

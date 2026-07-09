@@ -722,7 +722,6 @@ class DutGridPanel(QWidget):
         Args:
             dut_index: DUT 编号 (1-8)
             status: 状态 ('offline', 'online', 'testing', 'success', 'failed', 'error')
-            timestamp: 可选的时间戳字符串（格式如 "19:35:03"）
         """
         if dut_index not in self._dut_widgets:
             logger.warning("[DutGridPanel] dut_index %d not in _dut_widgets", dut_index)

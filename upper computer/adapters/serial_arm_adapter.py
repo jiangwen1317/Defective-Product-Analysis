@@ -206,15 +206,20 @@ class SerialArmAdapter(BaseArmAdapter):
             return False
 
     def _send_init_sequence(self) -> None:
-        """发送初始化序列到机械臂。"""
+        """发送初始化序列到机械臂。
+
+        初始化流程：
+        1. 发送 'e' 触发机械臂进入配置模式
+        2. 发送 '4' 启动测试脚本
+        """
         logger.info("发送初始化序列到机械臂...")
         time.sleep(0.5)
 
-        # 发送 'e' 进入特殊模式
+        # 步骤1：发送 'e' 触发机械臂进入配置模式
         try:
             self._serial.write(b'e')
             self._serial.flush()
-            logger.info("已发送: 'e' (进入特殊模式)")
+            logger.info("已发送: 'e' (触发配置模式)")
         except Exception as e:
             logger.error("发送 'e' 失败: %s", e)
             return
@@ -229,11 +234,11 @@ class SerialArmAdapter(BaseArmAdapter):
         except Exception as e:
             logger.warning("读取响应失败: %s", e)
 
-        # 发送 '4' 启动特殊脚本
+        # 步骤2：发送 '4' 启动测试脚本
         try:
             self._serial.write(b'4')
             self._serial.flush()
-            logger.info("已发送: '4' (启动特殊脚本)")
+            logger.info("已发送: '4' (启动测试脚本)")
         except Exception as e:
             logger.error("发送 '4' 失败: %s", e)
             return

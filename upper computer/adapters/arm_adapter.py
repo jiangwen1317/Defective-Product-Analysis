@@ -34,7 +34,7 @@ class ArmAdapter(BaseArmAdapter):
 
     支持 TCP Server 和 TCP Client 两种模式：
     - Server 模式：被动监听，等待机械臂主动连接
-    - Client 模式：主动连接下位机 IP（用于调试和实际通信）
+    - Client 模式：主动连接机械臂的 TCP 地址
 
     使用独立线程处理 TCP 连接，事件驱动回调通知上层应用。
     """
