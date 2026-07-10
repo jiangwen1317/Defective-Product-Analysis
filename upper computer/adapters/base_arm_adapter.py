@@ -249,13 +249,9 @@ class BaseArmAdapter(ABC):
         避免大量 "无法解析" 警告干扰用户。
         """
         frames_to_process: list[tuple[str, dict]] = []
-        incomplete_frames = 0
 
         with self._lock:
             buffer_copy = self._buffer
-
-            # 统计可能的完整帧数量
-            frame_count = buffer_copy.count("+")
 
             while "+" in buffer_copy:
                 frame, buffer_copy = buffer_copy.split("+", 1)
@@ -268,7 +264,6 @@ class BaseArmAdapter(ABC):
                     # 检查是否是可能不完整的帧（以 @ 开头但解析失败）
                     if frame.strip().startswith("@"):
                         # 可能是分片数据，debug 级别记录
-                        incomplete_frames += 1
                         logger.debug("收到分片数据，等待完整帧: %r", frame[:50])
                     else:
                         # 非协议数据（如配置信息），忽略

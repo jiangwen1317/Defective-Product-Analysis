@@ -4,6 +4,10 @@
 提供可复用的 UI 组件，包括卡片、状态指示器、统计面板等。
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt5.QtCore import Qt, QTimer, QEvent, pyqtSignal
 from PyQt5.QtWidgets import (
     QFrame,
@@ -17,40 +21,27 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.styles import (
-    COLOR_BG_SECONDARY,
     COLOR_BG_TERTIARY,
-    COLOR_BORDER,
     COLOR_ERROR,
-    COLOR_ERROR_BG,
-    COLOR_ERROR_BORDER,
     COLOR_IDLE,
     COLOR_INFO,
     COLOR_PROCESSING,
     COLOR_SUCCESS,
-    COLOR_SUCCESS_BG,
-    COLOR_SUCCESS_BORDER,
+    COLOR_TEST_ACTIVE,
     COLOR_TEXT_MUTED,
     COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_WARNING,
-    COLOR_WARNING_BG,
-    COLOR_WARNING_BORDER,
     FONT_MONO,
-    FONT_SIZE_2XL,
-    FONT_SIZE_3XL,
     FONT_SIZE_BASE,
     FONT_SIZE_LG,
     FONT_SIZE_SM,
     FONT_SIZE_XL,
     FONT_SIZE_XS,
-    RADIUS_FULL,
     RADIUS_MD,
-    RADIUS_SM,
     SPACING_LG,
     SPACING_MD,
     SPACING_SM,
     SPACING_XS,
-    SPACING_XL,
     card_style,
 )
 
@@ -562,7 +553,6 @@ class DutGridPanel(QWidget):
         self._dut_indicators: dict[int, StatusIndicator] = {}
         self._dut_indices = dut_indices if dut_indices is not None else list(range(1, 9))
         self._dut_original_styles: dict[int, str] = {}  # 保存原始样式
-        self._hovered_dut: int | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -703,12 +693,7 @@ class DutGridPanel(QWidget):
 
         # 如果当前有状态样式（不是默认样式），不处理悬停
         if dut_index in self._dut_original_styles:
-            base_style = self._dut_original_styles[dut_index]
-            if entering:
-                # 使用 CSS hover 已经足够，这里可以添加额外效果
-                self._hovered_dut = dut_index
-            else:
-                self._hovered_dut = None
+            pass  # CSS hover 已经处理样式效果
 
     def _restore_dut_style(self, dut_index: int) -> None:
         """恢复 DUT 默认样式。"""
@@ -806,8 +791,6 @@ class DutGridPanel(QWidget):
         """重置所有显示的 DUT 状态为离线。"""
         for dut_index in self._dut_indices:
             self.set_dut_status(dut_index, "offline")
-        # 重置悬停状态
-        self._hovered_dut = None
 
 
 class TestProgressPanel(QWidget):

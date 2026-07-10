@@ -11,7 +11,6 @@
 import logging
 import threading
 import time
-from enum import Enum
 from typing import Callable
 
 import serial
@@ -20,11 +19,6 @@ import serial.tools.list_ports
 from adapters.base_arm_adapter import BaseArmAdapter
 
 logger = logging.getLogger(__name__)
-
-
-class SerialArmMode(Enum):
-    """串口工作模式。"""
-    SERIAL = "serial"
 
 
 class SerialArmAdapter(BaseArmAdapter):

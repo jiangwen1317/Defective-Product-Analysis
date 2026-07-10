@@ -7,10 +7,10 @@
 """
 
 import logging
+import re
 import socket
 import threading
 import time
-from enum import Enum
 from typing import Callable
 
 # 从 tc3720_adapter 导入共享的 TC3720Status
@@ -81,7 +81,6 @@ class TC3720TcpAdapter:
         # 内部状态
         self._status = TC3720Status.OFFLINE
         self._pending_test = False  # 是否有待处理的测试
-        self._pending_timeout: float = 30.0
 
         # 读取缓冲区
         self._buffer: str = ""
@@ -128,27 +127,6 @@ class TC3720TcpAdapter:
         """TCP 是否已连接。"""
         with self._lock:
             return self._connected and self._socket is not None
-
-    def _is_socket_valid(self) -> bool:
-        """检查 socket 是否真正可用（发送前验证）。
-
-        Returns:
-            socket 是否可用。
-        """
-        with self._lock:
-            if not self._socket:
-                return False
-            if not self._connected:
-                return False
-            try:
-                # 使用 poll 检查 socket 状态（Linux）或 getsockname（通用）
-                # 这里用简单的 getsockname 验证 socket 未关闭
-                self._socket.getpeername()  # 如果连接已断开会抛出异常
-                return True
-            except (OSError, socket.error):
-                # 连接已断开
-                self._connected = False
-                return False
 
     def _set_status(self, new_status: TC3720Status) -> None:
         """更新设备状态并触发回调（线程安全）。"""
@@ -361,7 +339,6 @@ class TC3720TcpAdapter:
         # 保存待处理测试信息
         with self._lock:
             self._pending_test = True
-            self._pending_timeout = timeout
 
         # 发送指令
         if not self._send_command(command):
@@ -411,7 +388,6 @@ class TC3720TcpAdapter:
         # 保存待处理测试信息
         with self._lock:
             self._pending_test = True
-            self._pending_timeout = timeout
 
         # 发送指令
         if not self._send_command(command):
@@ -641,8 +617,6 @@ class TC3720TcpAdapter:
         Args:
             line: 响应行，格式为 "ErrorCode: XXXX"。
         """
-        import re
-
         # 匹配 "ErrorCode: XXXX" 格式
         match = re.match(r"^ErrorCode:\s*([0-9A-Fa-f]{4})$", line, re.IGNORECASE)
         if not match:

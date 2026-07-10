@@ -18,7 +18,6 @@
 
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -421,18 +420,6 @@ class PassthroughGateway:
         if self._on_error:
             self._on_error(ErrorCode.UNKNOWN, error)
 
-    def _on_3720_status_changed_callback(self, status: TC3720Status) -> None:
-        """3720 状态变化回调。"""
-        logger.debug("3720 状态: %s", status.value)
-        if self._on_3720_status_changed:
-            self._on_3720_status_changed(status)
-
-    def _on_3720_error(self, error: str) -> None:
-        """3720 错误回调。"""
-        logger.error("3720 通信错误: %s", error)
-        if self._on_error:
-            self._on_error(ErrorCode.TC3720_ERROR, error)
-
     def _on_arm_data_received(self, data: str) -> None:
         """机械臂数据接收回调（协议解析模式）。
 
@@ -561,9 +548,7 @@ class PassthroughGateway:
         # 事件驱动等待：等待所有测试完成或超时
         timeout = self._config.test_timeout * 2  # 使用较长的超时时间
         self._test_complete_event.clear()
-
-        # 等待事件触发或超时
-        completed = self._test_complete_event.wait(timeout=timeout)
+        self._test_complete_event.wait(timeout=timeout)
 
         # 收集结果
         with self._test_lock:

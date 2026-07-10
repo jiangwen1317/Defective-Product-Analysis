@@ -27,8 +27,6 @@ from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
