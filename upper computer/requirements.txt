@@ -1,7 +1,8 @@
 # 机械臂中转网关依赖
+# 运行环境要求：Python 3.10+（由 main.py 的 preflight_check 校验）
 
 # GUI 框架
 PyQt5>=5.15.0
 
-# Python 版本
-python>=3.10
+# 串口通信（serial 模式必需）
+pyserial>=3.5

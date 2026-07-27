@@ -19,6 +19,7 @@
 import logging
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -106,6 +107,9 @@ class PassthroughGateway:
         on_arm_connected: Callable[[bool], None] | None = None,
         on_3720_status_changed: Callable[[TC3720Status], None] | None = None,
         on_dut_status_changed: Callable[[int, TC3720Status], None] | None = None,  # 新增：每个 DUT 的状态
+        on_test_started: Callable[[str, str, list[int]], None] | None = None,  # group, bitmask, dut_indices
+        on_dut_result: Callable[[int, str], None] | None = None,  # dut_index, error_code
+        on_test_finished: Callable[[str, dict[int, str], float], None] | None = None,  # group, results, duration
         on_record: Callable[[TransferRecord], None] | None = None,
         on_raw_data: Callable[[str, str], None] | None = None,  # direction, data
         on_error: Callable[[ErrorCode, str], None] | None = None,
@@ -118,6 +122,9 @@ class PassthroughGateway:
             on_arm_connected: 机械臂连接状态变化回调。
             on_3720_status_changed: 3720 聚合状态变化回调。
             on_dut_status_changed: 单个 DUT 状态变化回调 (dut_index, status)。
+            on_test_started: 测试会话开始回调 (group, bitmask, dut_indices)。
+            on_dut_result: 会话内单个 DUT 结果回调 (dut_index, error_code)。
+            on_test_finished: 测试会话结束回调 (group, {dut_index: error_code}, 耗时秒)。
             on_record: 中转记录回调。
             on_raw_data: 原始数据回调（direction: "arm_to_3720" 或 "3720_to_arm"）。
             on_error: 错误发生回调。
@@ -127,6 +134,9 @@ class PassthroughGateway:
         self._on_arm_connected = on_arm_connected
         self._on_3720_status_changed = on_3720_status_changed
         self._on_dut_status_changed = on_dut_status_changed
+        self._on_test_started = on_test_started
+        self._on_dut_result = on_dut_result
+        self._on_test_finished = on_test_finished
         self._on_record = on_record
         self._on_raw_data = on_raw_data
         self._on_error = on_error
@@ -566,6 +576,11 @@ class PassthroughGateway:
 
         logger.info("[ARM-RX] 需要测试的 DUT: %s (Bitmask: %s)", dut_indices, bitmask)
 
+        # 会话计时与开始通知（供 UI 显示进度与任务详情）
+        session_start = time.monotonic()
+        if self._on_test_started:
+            self._on_test_started(group, bitmask, list(dut_indices))
+
         # 更新状态为测试中
         self._set_state(GatewayState.FORWARDING)
 
@@ -583,6 +598,13 @@ class PassthroughGateway:
             logger.error("[ARM-RX] 设备管理器未初始化")
             self._set_state(GatewayState.ERROR)
             self._send_error_to_arm("Device manager not initialized")
+            # 会话异常中止同样要通知 UI 结束，避免进度面板卡在"测试中"
+            if self._on_test_finished:
+                self._on_test_finished(
+                    group,
+                    {dut_idx: "EEEE" for dut_idx in dut_indices},
+                    time.monotonic() - session_start,
+                )
             return
 
         # 向对应的 3720 设备发送 START 信号
@@ -602,6 +624,10 @@ class PassthroughGateway:
                 all_complete = all(code is not None for code in self._test_results.values())
             if all_complete:
                 self._test_complete_event.set()
+            # 启动失败的 DUT 不会再有完成回调，主动上报 EEEE 结果到 UI
+            if self._on_dut_result:
+                for dut_idx in failed_duts:
+                    self._on_dut_result(dut_idx, "EEEE")
 
         # 事件驱动等待：等待所有测试完成或超时
         timeout = self._config.test_timeout * 2  # 使用较长的超时时间
@@ -622,6 +648,8 @@ class PassthroughGateway:
             logger.warning("[ARM-RX] 以下 DUT 测试超时: %s", pending)
             for dut_idx in pending:
                 final_results[dut_idx] = "EEEE"  # 超时错误码
+                if self._on_dut_result:
+                    self._on_dut_result(dut_idx, "EEEE")
 
         # 组装错误码列表（按 DUT #1-#8 顺序）
         error_codes = []
@@ -636,6 +664,12 @@ class PassthroughGateway:
         # 发送 TEST_DONE 响应给机械臂
         self._send_test_done_to_arm(group, error_codes)
 
+        # 会话结束通知（仅含本次受测 DUT 的结果与耗时）
+        if self._on_test_finished:
+            self._on_test_finished(
+                group, dict(final_results), time.monotonic() - session_start
+            )
+
     def _on_device_test_result(self, result) -> None:
         """设备测试完成回调（收集结果）。
 
@@ -646,11 +680,17 @@ class PassthroughGateway:
                    result.dut_index, result.error_code)
 
         all_complete = False
+        tracked = False
         with self._test_lock:
             if result.dut_index in self._test_results:
+                tracked = True
                 self._test_results[result.dut_index] = result.error_code
                 # 检查是否所有 DUT 都返回了结果
                 all_complete = all(code is not None for code in self._test_results.values())
+
+        # 会话内的单 DUT 结果转发到 UI（锁外执行回调）
+        if tracked and self._on_dut_result:
+            self._on_dut_result(result.dut_index, result.error_code)
 
         # 如果所有测试完成，触发事件
         if all_complete:
@@ -666,11 +706,17 @@ class PassthroughGateway:
         logger.error("[3720-ERR] DUT#%d 错误: %s", dut_index, error_msg)
 
         all_complete = False
+        tracked = False
         with self._test_lock:
             if dut_index in self._test_results:
+                tracked = True
                 self._test_results[dut_index] = "EEEE"
                 # 检查是否所有 DUT 都返回了结果
                 all_complete = all(code is not None for code in self._test_results.values())
+
+        # 会话内的单 DUT 错误结果转发到 UI（锁外执行回调）
+        if tracked and self._on_dut_result:
+            self._on_dut_result(dut_index, "EEEE")
 
         # 如果所有测试完成，触发事件
         if all_complete:
@@ -735,8 +781,8 @@ class PassthroughGateway:
     def _send_error_to_arm(self, error_msg: str) -> None:
         """发送错误信息给机械臂。
 
-        发送 group="FF" 的 TEST_DONE 表示测试异常中止，
-        所有 DUT 标记为错误码 EEEE。
+        协议规定 Group 恒为 "00"（非法帧会被机械臂丢弃），
+        因此异常中止通过 group="00" + 全 DUT 错误码 EEEE 表达。
 
         Args:
             error_msg: 错误消息（记录到日志，当前协议不发送给机械臂）。
@@ -751,7 +797,7 @@ class PassthroughGateway:
 
         # 发送异常中止信号（所有 DUT 标记为错误码 EEEE）
         error_codes = ["EEEE"] * 8
-        response = ArmProtocol.build_test_done("FF", error_codes)
+        response = ArmProtocol.build_test_done("00", error_codes)
 
         if hasattr(arm_adapter, 'send_raw'):
             success = arm_adapter.send_raw(response)

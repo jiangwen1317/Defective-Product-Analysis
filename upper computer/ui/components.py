@@ -344,10 +344,10 @@ class StatsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACING_MD)
 
-        # 统计数据
+        # 统计数据（按测试会话统计）
         self._stats: dict[str, StatCard] = {}
         stats_data = [
-            ("total", "总传输", "0", ""),
+            ("total", "总测试", "0", ""),
             ("success", "成功", "0", ""),
             ("failed", "失败", "0", ""),
             ("rate", "成功率", "0%", ""),

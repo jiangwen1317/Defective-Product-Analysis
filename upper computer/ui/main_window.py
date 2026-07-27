@@ -13,6 +13,7 @@
 
 import logging
 import sys
+import threading
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -100,6 +101,10 @@ class MainWindow(QMainWindow):
     _sig_dut_status = pyqtSignal(int, object)  # dut_index, TC3720Status
     _sig_record = pyqtSignal(object)           # TransferRecord
     _sig_error = pyqtSignal(object, str)       # ErrorCode, message
+    _sig_test_started = pyqtSignal(str, str, object)    # group, bitmask, dut_indices
+    _sig_dut_result = pyqtSignal(int, str)              # dut_index, error_code
+    _sig_test_finished = pyqtSignal(str, object, float)  # group, results, duration
+    _sig_service_done = pyqtSignal(bool, bool, str)     # is_start, ok, message
 
     def __init__(self) -> None:
         """初始化主窗口。"""
@@ -113,8 +118,11 @@ class MainWindow(QMainWindow):
         # 网关实例
         self._gateway: SignalGateway | None = None
 
-        # 统计数据
+        # 统计数据（按测试会话统计：全部 0000 记成功，否则记失败）
         self._stats = {"total": 0, "success": 0, "failed": 0}
+
+        # 启停服务在后台线程执行，执行期间禁止重入
+        self._service_busy = False
 
         # 日志（使用 deque 自动限制长度）
         self._log_buffer: deque[str] = deque(maxlen=self._ui_config.get("log_max_lines", 5000))
@@ -131,6 +139,10 @@ class MainWindow(QMainWindow):
         self._sig_dut_status.connect(self._update_dut_display_safe)
         self._sig_record.connect(self._update_transfer_display_safe)
         self._sig_error.connect(self._update_error_display_safe)
+        self._sig_test_started.connect(self._update_test_started_safe)
+        self._sig_dut_result.connect(self._update_dut_result_safe)
+        self._sig_test_finished.connect(self._update_test_finished_safe)
+        self._sig_service_done.connect(self._on_service_done_safe)
 
         # 窗口初始化
         self._init_ui()
@@ -228,7 +240,7 @@ class MainWindow(QMainWindow):
         stats_layout = QHBoxLayout()
         stats_layout.setSpacing(16)
 
-        self._header_total_label = QLabel("0 条")
+        self._header_total_label = QLabel("0 次")
         self._header_total_label.setStyleSheet("color: #6e7681; font-size: 12px;")
         stats_layout.addWidget(self._header_total_label)
 
@@ -649,6 +661,9 @@ class MainWindow(QMainWindow):
                 on_state_changed=self._on_gateway_state_changed,
                 on_arm_connected=self._on_arm_connected,
                 on_dut_status_changed=self._on_dut_status_changed,
+                on_test_started=self._on_test_started,
+                on_dut_result=self._on_dut_result,
+                on_test_finished=self._on_test_finished,
                 on_record=self._on_transfer_record,
                 on_error=self._on_gateway_error,
             )
@@ -658,66 +673,87 @@ class MainWindow(QMainWindow):
             logger.debug("初始化失败详情:", exc_info=True)
 
     def _on_toggle_service(self) -> None:
-        """切换服务状态。"""
-        if self._gateway is None:
+        """切换服务状态（启停在后台线程执行，避免设备连接/串口初始化阻塞 UI）。"""
+        if self._gateway is None or self._service_busy:
             return
 
-        if self._gateway.is_running:
-            self._stop_gateway()
-        else:
-            self._start_gateway()
+        is_start = not self._gateway.is_running
+        self._service_busy = True
+        self._service_btn.setEnabled(False)
+        self._service_btn.setText("启动中..." if is_start else "停止中...")
 
-    def _start_gateway(self) -> None:
-        """启动网关服务。"""
-        if self._gateway is None or self._gateway.is_running:
-            return
+        threading.Thread(
+            target=self._service_worker,
+            args=(is_start,),
+            name="UI-ServiceWorker",
+            daemon=True,
+        ).start()
 
+    def _service_worker(self, is_start: bool) -> None:
+        """后台执行网关启停（工作线程，完成后经信号回主线程刷新 UI）。"""
+        message = ""
         try:
-            result = self._gateway.start()
+            if is_start:
+                ok = self._gateway.start()
+            else:
+                self._gateway.stop()
+                ok = True
         except Exception as e:
-            logger.exception("启动网关失败: %s", e)
-            self._log("错误", "启动失败，请查看日志")
-            return
+            logger.exception("网关%s失败: %s", "启动" if is_start else "停止", e)
+            ok = False
+            message = str(e)
+        self._sig_service_done.emit(is_start, ok, message)
 
-        if result:
-            # 更新按钮
-            self._service_btn.setText("■ 停止服务")
-            self._service_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {COLOR_ERROR};
-                    color: white;
-                    border: none;
-                    border-radius: {RADIUS_SM};
-                    font-size: 12px;
-                    font-weight: 600;
-                }}
-                QPushButton:hover {{
-                    background-color: #dc2626;
-                }}
-            """)
+    def _on_service_done_safe(self, is_start: bool, ok: bool, message: str) -> None:
+        """网关启停完成后的 UI 更新（主线程安全）。"""
+        self._service_busy = False
+        self._service_btn.setEnabled(True)
 
-            # 更新标题栏状态
-            self._header_status_label.setText("● 服务运行中")
-            self._header_status_label.setStyleSheet("""
-                color: #22c55e;
-                font-size: 12px;
-                padding: 5px 14px;
-                background-color: #21262d;
-                border-radius: 14px;
-            """)
-
-            # 更新网关状态标签
-            if hasattr(self, '_gw_status_label'):
-                self._gw_status_label.setText("空闲")
-                if hasattr(self, '_gw_status_emoji'):
-                    self._gw_status_emoji.setText("⚪")
-
+        if is_start and ok:
+            self._apply_service_started_ui()
             # 主动更新所有设备状态（解决初始状态不显示的问题）
             self._update_all_device_status()
-
             self._log("系统", "中转服务已启动，等待机械臂连接...")
+        elif is_start:
+            self._apply_service_stopped_ui()
+            self._log("错误", f"启动网关失败: {message}" if message else "启动网关失败")
         else:
-            self._log("错误", "启动网关失败")
+            self._apply_service_stopped_ui()
+            self._log("系统", "中转服务已停止")
+
+    def _apply_service_started_ui(self) -> None:
+        """应用"服务运行中"的界面状态。"""
+        # 更新按钮
+        self._service_btn.setText("■ 停止服务")
+        self._service_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_ERROR};
+                color: white;
+                border: none;
+                border-radius: {RADIUS_SM};
+                font-size: 12px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: #dc2626;
+            }}
+        """)
+
+        # 更新标题栏状态
+        self._header_status_label.setText("● 服务运行中")
+        self._header_status_label.setStyleSheet("""
+            color: #22c55e;
+            font-size: 12px;
+            padding: 5px 14px;
+            background-color: #21262d;
+            border-radius: 14px;
+        """)
+
+        # 更新网关状态标签
+        if hasattr(self, '_gw_status_label'):
+            self._gw_status_label.setText("空闲")
+            if hasattr(self, '_gw_status_emoji'):
+                self._gw_status_emoji.setText("⚪")
 
     def _update_all_device_status(self) -> None:
         """主动更新所有设备状态（解决初始状态不显示的问题）。"""
@@ -773,13 +809,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.exception("更新设备状态失败: %s", e)
 
-    def _stop_gateway(self) -> None:
-        """停止网关服务。"""
-        if self._gateway is None or not self._gateway.is_running:
-            return
-
-        self._gateway.stop()
-
+    def _apply_service_stopped_ui(self) -> None:
+        """应用"服务未启动"的界面状态。"""
         # 更新按钮
         self._service_btn.setText("▶ 启动服务")
         self._service_btn.setStyleSheet(f"""
@@ -805,8 +836,6 @@ class MainWindow(QMainWindow):
             background-color: #21262d;
             border-radius: 14px;
         """)
-
-        self._log("系统", "中转服务已停止")
 
         # 重置显示
         self._arm_connection.set_status("offline")
@@ -849,11 +878,10 @@ class MainWindow(QMainWindow):
             self._log("错误", "机械臂未连接，无法触发测试")
             return
 
-        # 获取用户选择的板子列表
-        selected_boards = []
-        for i, checkbox in enumerate(self._board_checkboxes, start=1):
-            if checkbox.isChecked():
-                selected_boards.append(i)
+        # 获取用户选择的板子列表（复选框按 _configured_duts 顺序创建，
+        # 勾选序号不等于板号，必须按位置映射回真实 DUT 编号）
+        checked = [checkbox.isChecked() for checkbox in self._board_checkboxes]
+        selected_boards = self._map_selected_boards(self._configured_duts, checked)
 
         if not selected_boards:
             self._log("错误", "请至少选择一个板子")
@@ -867,6 +895,19 @@ class MainWindow(QMainWindow):
             self._log("触发", f"已发送 @TEST_DONE 触发命令（测试 {boards_str}），等待机械臂响应...")
         else:
             self._log("错误", "发送触发命令失败")
+
+    @staticmethod
+    def _map_selected_boards(configured_duts: list[int], checked: list[bool]) -> list[int]:
+        """将复选框勾选状态映射为真实 DUT 编号列表。
+
+        Args:
+            configured_duts: 已配置的 DUT 编号列表（与复选框一一对应）。
+            checked: 各复选框的勾选状态。
+
+        Returns:
+            被勾选的 DUT 编号列表（如配置 [3, 5] 且全勾选时返回 [3, 5]）。
+        """
+        return [dut for dut, is_checked in zip(configured_duts, checked) if is_checked]
 
     def _on_select_all_boards(self) -> None:
         """全选所有已配置的板子。"""
@@ -995,10 +1036,7 @@ class MainWindow(QMainWindow):
                 logger.warning("任务显示控件未初始化，跳过传输更新")
                 return
 
-            # 更新统计数据
-            self._stats["total"] += 1
-
-            # 根据方向显示日志
+            # 根据方向显示日志（会话级统计在 _update_test_finished_safe 中更新）
             if record.direction == "arm_to_3720":
                 self._log(
                     "发送",
@@ -1013,21 +1051,17 @@ class MainWindow(QMainWindow):
                 self._log("记录", f"[{record.size} 字节]: {record.raw_data!r}")
 
             if record.error_code != ErrorCode.NONE:
-                self._stats["failed"] += 1
                 self._log("异常", f"中转异常 - {record.error_code.value}: {record.error_message}")
-
-            # 更新统计显示
-            self._update_stats_display()
         except Exception as e:
             logger.exception("更新传输显示失败: %s", e)
 
     def _update_stats_display(self) -> None:
-        """更新统计显示。"""
+        """更新统计显示（按测试会话统计）。"""
         total = self._stats["total"]
         success = self._stats["success"]
         failed = self._stats["failed"]
 
-        self._header_total_label.setText(f"{total} 条")
+        self._header_total_label.setText(f"{total} 次")
         self._header_success_label.setText(f"✓ {success}")
         self._header_failed_label.setText(f"✗ {failed}")
 
@@ -1066,6 +1100,76 @@ class MainWindow(QMainWindow):
             self._log("错误", f"[{error_code.value}] {message}")
         except Exception as e:
             logger.exception("更新错误显示失败: %s", e)
+
+    def _on_test_started(self, group: str, bitmask: str, dut_indices: list[int]) -> None:
+        """测试会话开始回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_test_started.emit(group, bitmask, dut_indices)
+
+    def _update_test_started_safe(self, group: str, bitmask: str, dut_indices: list[int]) -> None:
+        """更新测试会话开始显示（主线程安全）。
+
+        Args:
+            group: 组号。
+            bitmask: DUT 位掩码。
+            dut_indices: 本次受测的 DUT 编号列表。
+        """
+        try:
+            self._test_progress_panel.start_test(dut_indices)
+
+            if self._task_group_label is not None:
+                self._task_group_label.setText(group)
+                self._task_bitmask_label.setText(bitmask)
+                self._task_errorcodes_label.setText("-")
+                self._task_duration_label.setText("-")
+
+            duts_str = "、".join(f"#{d}" for d in dut_indices)
+            self._log("系统", f"测试会话开始 - Bitmask: {bitmask}，受测 DUT: {duts_str}")
+        except Exception as e:
+            logger.exception("更新测试开始显示失败: %s", e)
+
+    def _on_dut_result(self, dut_index: int, error_code: str) -> None:
+        """单 DUT 结果回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_dut_result.emit(dut_index, error_code)
+
+    def _update_dut_result_safe(self, dut_index: int, error_code: str) -> None:
+        """更新单 DUT 测试结果显示（主线程安全）。"""
+        try:
+            self._test_progress_panel.update_dut_result(dut_index, error_code)
+        except Exception as e:
+            logger.exception("更新 DUT#%d 结果显示失败: %s", dut_index, e)
+
+    def _on_test_finished(self, group: str, results: dict[int, str], duration: float) -> None:
+        """测试会话结束回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_test_finished.emit(group, results, duration)
+
+    def _update_test_finished_safe(self, group: str, results: dict[int, str], duration: float) -> None:
+        """更新测试会话结束显示（主线程安全）。
+
+        Args:
+            group: 组号。
+            results: 本次受测 DUT 的结果字典 {dut_index: error_code}。
+            duration: 会话耗时（秒）。
+        """
+        try:
+            self._test_progress_panel.complete_test(results)
+
+            if self._task_errorcodes_label is not None:
+                codes_text = " ".join(f"#{d}:{results[d]}" for d in sorted(results))
+                self._task_errorcodes_label.setText(codes_text or "-")
+                self._task_duration_label.setText(f"{duration:.1f} s")
+
+            # 会话级统计：全部 0000 记成功，否则记失败
+            self._stats["total"] += 1
+            if results and all(code == "0000" for code in results.values()):
+                self._stats["success"] += 1
+            else:
+                self._stats["failed"] += 1
+            self._update_stats_display()
+
+            passed = sum(1 for code in results.values() if code == "0000")
+            self._log("完成", f"测试会话结束 - {passed}/{len(results)} 通过，耗时 {duration:.1f}s")
+        except Exception as e:
+            logger.exception("更新测试完成显示失败: %s", e)
 
     def _log(self, level: str, message: str) -> None:
         """添加日志条目（线程安全）。"""
@@ -1123,9 +1227,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "导出失败", str(e))
 
     def closeEvent(self, event: QEvent) -> None:
-        """窗口关闭事件。"""
+        """窗口关闭事件（退出时同步停止网关，允许短暂阻塞）。"""
         if self._gateway and self._gateway.is_running:
-            self._stop_gateway()
+            self._gateway.stop()
 
         event.accept()
 
