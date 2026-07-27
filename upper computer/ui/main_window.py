@@ -7,7 +7,7 @@
 
 架构说明：
 - Gateway 在独立线程运行
-- 回调通过 QTimer.singleShot 安全传递到主线程
+- 回调通过 pyqtSignal 安全传递到主线程（跨线程 emit 自动排队到主线程执行）
 - 使用统一的样式系统
 """
 
@@ -22,7 +22,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from PyQt5.QtCore import QEvent, Qt, QTimer
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -93,6 +93,14 @@ class MainWindow(QMainWindow):
     采用三栏布局的专业级监控系统界面。
     """
 
+    # 跨线程通信信号：网关回调在工作线程触发，通过信号转发到主线程执行 UI 更新
+    # （pyqtSignal.emit 是 Qt 官方保证线程安全的机制，跨线程连接自动排队）
+    _sig_state_changed = pyqtSignal(object)   # GatewayState
+    _sig_arm_connected = pyqtSignal(bool)
+    _sig_dut_status = pyqtSignal(int, object)  # dut_index, TC3720Status
+    _sig_record = pyqtSignal(object)           # TransferRecord
+    _sig_error = pyqtSignal(object, str)       # ErrorCode, message
+
     def __init__(self) -> None:
         """初始化主窗口。"""
         super().__init__()
@@ -116,6 +124,13 @@ class MainWindow(QMainWindow):
         self._alarm_card: Card | None = None
         self._task_group_label: QLabel | None = None
         self._dut_connections: dict[int, ConnectionStatus] = {}  # DUT 状态字典
+
+        # 跨线程信号接线（需先于网关初始化，确保回调触发时槽已就绪）
+        self._sig_state_changed.connect(self._update_flow_display_safe)
+        self._sig_arm_connected.connect(self._update_arm_display_safe)
+        self._sig_dut_status.connect(self._update_dut_display_safe)
+        self._sig_record.connect(self._update_transfer_display_safe)
+        self._sig_error.connect(self._update_error_display_safe)
 
         # 窗口初始化
         self._init_ui()
@@ -864,8 +879,8 @@ class MainWindow(QMainWindow):
             checkbox.setChecked(False)
 
     def _on_gateway_state_changed(self, state: GatewayState) -> None:
-        """网关状态变化回调（线程安全）。"""
-        QTimer.singleShot(0, lambda s=state: self._update_flow_display_safe(s))
+        """网关状态变化回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_state_changed.emit(state)
 
     def _update_flow_display_safe(self, state: GatewayState) -> None:
         """更新网关状态显示（主线程安全）。"""
@@ -900,8 +915,8 @@ class MainWindow(QMainWindow):
             logger.exception("更新网关状态显示失败: %s", e)
 
     def _on_arm_connected(self, connected: bool) -> None:
-        """机械臂连接状态变化回调（线程安全）。"""
-        QTimer.singleShot(0, lambda c=connected: self._update_arm_display_safe(c))
+        """机械臂连接状态变化回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_arm_connected.emit(connected)
 
     def _update_arm_display_safe(self, connected: bool) -> None:
         """更新机械臂显示（主线程安全）。"""
@@ -929,8 +944,8 @@ class MainWindow(QMainWindow):
             dut_index: DUT 编号 (1-8)。
             status: 新状态。
         """
-        # 通过 QTimer.singleShot(0, ...) 确保在主线程执行
-        QTimer.singleShot(0, lambda di=dut_index, s=status: self._update_dut_display_safe(di, s))
+        # 通过信号转发，确保在主线程执行
+        self._sig_dut_status.emit(dut_index, status)
 
     def _update_dut_display_safe(self, dut_index: int, status: TC3720Status) -> None:
         """更新单个 DUT 显示（主线程安全）。
@@ -965,12 +980,8 @@ class MainWindow(QMainWindow):
             logger.exception("更新 DUT#%d 显示失败: %s", dut_index, e)
 
     def _on_transfer_record(self, record: TransferRecord) -> None:
-        """中转记录回调（线程安全）。
-
-        使用 QTimer.singleShot 确保 UI 更新在主线程执行。
-        """
-        # 将 record 对象传递给主线程
-        QTimer.singleShot(0, lambda r=record: self._update_transfer_display_safe(r))
+        """中转记录回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_record.emit(record)
 
     def _update_transfer_display_safe(self, record: TransferRecord) -> None:
         """更新传输显示（主线程安全）。
@@ -1023,8 +1034,8 @@ class MainWindow(QMainWindow):
         self._stats_panel.update_stats(total, success, failed)
 
     def _on_gateway_error(self, error_code: ErrorCode, message: str) -> None:
-        """网关错误回调（线程安全）。"""
-        QTimer.singleShot(0, lambda e=error_code, m=message: self._update_error_display_safe(e, m))
+        """网关错误回调（工作线程触发，经信号转发到主线程）。"""
+        self._sig_error.emit(error_code, message)
 
     def _update_error_display_safe(self, error_code: ErrorCode, message: str) -> None:
         """更新错误显示（主线程安全）。

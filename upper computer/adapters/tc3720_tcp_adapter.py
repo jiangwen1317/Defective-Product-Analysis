@@ -283,8 +283,13 @@ class TC3720TcpAdapter:
         except Exception as e:
             logger.error("发送数据到 3720 失败: %s", e)
             self._connected = False
-            if self._running:
-                self._start_reconnect()
+            # 关闭 socket 促使接收线程尽快退出，由接收线程统一触发重连，
+            # 避免旧接收线程与重连后的新线程并发操作同一 socket
+            if self._socket:
+                try:
+                    self._socket.close()
+                except Exception:
+                    pass
             return False
         finally:
             self._lock.release()
@@ -444,15 +449,20 @@ class TC3720TcpAdapter:
             elapsed = time.time() - start_time
 
             if elapsed >= timeout:
+                # 锁内只做判断与标志修改；_set_status 与回调必须在锁外执行，
+                # 否则嵌套获取同一把非重入锁会永久死锁
+                timed_out = False
                 with self._lock:
                     if self._pending_test and self._status == TC3720Status.TESTING:
-                        logger.error("3720 测试超时 (%.1f秒)", timeout)
                         self._pending_test = False
-                        self._set_status(TC3720Status.IDLE)
+                        timed_out = True
 
-                        if self._on_error:
-                            self._on_error("测试超时")
-                    return
+                if timed_out:
+                    logger.error("3720 测试超时 (%.1f秒)", timeout)
+                    self._set_status(TC3720Status.IDLE)
+                    if self._on_error:
+                        self._on_error("测试超时")
+                return
 
             with self._lock:
                 if not self._pending_test:
@@ -524,38 +534,40 @@ class TC3720TcpAdapter:
         根据 3720 协议解析响应：
         - 测试完成响应: RESULT <ec1> <ec2> ... <ec8>
         - 错误响应: ERROR <code>
+
+        行提取在锁内直接消费 self._buffer，解析回调在锁外执行，
+        避免"拷贝-解析-覆盖回写"模式在解析窗口期丢失新到达的数据。
         """
+        lines: list[str] = []
+
         with self._lock:
-            buffer_copy = self._buffer
+            # 查找行结束符（根据实际协议，可能是 \r\n、\n 或 \r）
+            while True:
+                idx_n = self._buffer.find("\n")
+                idx_r = self._buffer.find("\r")
+                if idx_n == -1 and idx_r == -1:
+                    break
 
-        # 查找行结束符（根据实际协议，可能是 \r\n 或 \n）
-        while "\n" in buffer_copy or "\r" in buffer_copy:
-            # 提取一行
-            if "\r\n" in buffer_copy:
-                line, buffer_copy = buffer_copy.split("\r\n", 1)
-            elif "\n" in buffer_copy:
-                line, buffer_copy = buffer_copy.split("\n", 1)
-            elif "\r" in buffer_copy:
-                line, buffer_copy = buffer_copy.split("\r", 1)
-            else:
-                break
+                if idx_r != -1 and (idx_n == -1 or idx_r < idx_n):
+                    end = idx_r
+                    # \r\n 作为整体跳过
+                    skip = 2 if self._buffer[idx_r:idx_r + 2] == "\r\n" else 1
+                else:
+                    end = idx_n
+                    skip = 1
 
-            # 移除所有不可打印字符（包括 \x00, \r, \n, 空格等）
-            line = line.strip()
-            # 额外移除 \x00 等 NULL 字符
-            line = line.strip("\x00").strip()
+                line = self._buffer[:end]
+                self._buffer = self._buffer[end + skip:]
 
-            if not line:
-                continue
+                # 移除首尾空白及 \x00 等 NULL 字符
+                line = line.strip().strip("\x00").strip()
+                if line:
+                    lines.append(line)
 
+        for line in lines:
             logger.debug("3720 响应行: %r", line)
-
             # 解析响应（根据实际协议修改）
             self._parse_response(line)
-
-        # 更新缓冲区
-        with self._lock:
-            self._buffer = buffer_copy
 
     def _parse_response(self, line: str) -> None:
         """解析 3720 响应。

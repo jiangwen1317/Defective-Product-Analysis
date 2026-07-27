@@ -17,6 +17,7 @@
 """
 
 import logging
+import queue
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -95,6 +96,9 @@ class PassthroughGateway:
     支持多设备：根据 Bitmask 中的 8 个位置，对应 8 个独立的 3720 测试仪。
     """
 
+    # 机械臂接收缓冲区上限：正常协议帧不超百字节，超限视为异常数据
+    MAX_ARM_BUFFER: int = 4096
+
     def __init__(
         self,
         config: GatewayConfig | None = None,
@@ -135,6 +139,11 @@ class PassthroughGateway:
         self._test_results: dict[int, str | None] = {}  # dut_index -> error_code (None=未完成)
         self._test_lock = threading.Lock()
         self._test_complete_event = threading.Event()  # 所有测试完成事件
+
+        # 测试会话工作线程：START_TEST 的处理（含等待结果）在此线程串行执行，
+        # 避免阻塞适配器接收线程（阻塞会导致测试期间无法接收机械臂数据）
+        self._test_queue: queue.Queue[dict] = queue.Queue()
+        self._test_worker: threading.Thread | None = None
 
         # 机械臂数据接收缓冲区（用于处理分片数据）
         self._arm_buffer: str = ""
@@ -355,6 +364,14 @@ class PassthroughGateway:
             self._running = False
             raise
 
+        # 启动测试会话工作线程（必须先于机械臂监听，机械臂可能立即发送指令）
+        self._test_worker = threading.Thread(
+            target=self._test_worker_loop,
+            name="Gateway-TestWorker",
+            daemon=True,
+        )
+        self._test_worker.start()
+
         # 启动机械臂监听（机械臂可能立即开始发送数据）
         if not self._arm_adapter.start():
             self._cleanup()
@@ -371,6 +388,13 @@ class PassthroughGateway:
 
         logger.info("停止透明中转网关...")
         self._running = False
+
+        # 唤醒可能正在等待测试结果的工作线程，使其尽快退出
+        self._test_complete_event.set()
+        if self._test_worker and self._test_worker.is_alive():
+            self._test_worker.join(timeout=2.0)
+        self._test_worker = None
+
         self._set_state(GatewayState.IDLE)
         self._cleanup()
         logger.info("透明中转网关已停止")
@@ -413,6 +437,25 @@ class PassthroughGateway:
             bitmask: DUT 位掩码。
         """
         self._handle_start_test({"group": group, "bitmask": bitmask})
+
+    def _test_worker_loop(self) -> None:
+        """测试会话工作线程主循环。
+
+        从队列中取出 START_TEST 请求串行处理（与原同步处理的顺序语义一致），
+        但不再占用适配器接收线程。
+        """
+        logger.info("测试会话工作线程启动")
+        while self._running:
+            try:
+                params = self._test_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            try:
+                self._handle_start_test(params)
+            except Exception:
+                logger.exception("处理 START_TEST 异常")
+        logger.info("测试会话工作线程退出")
 
     def _on_arm_error(self, error: str) -> None:
         """机械臂错误回调。"""
@@ -462,7 +505,11 @@ class PassthroughGateway:
             # 再找 '+' 的位置
             plus_pos = self._arm_buffer.find("+")
             if plus_pos == -1:
-                # 没有 '+'，帧不完整，等待更多数据
+                # 没有 '+'，帧不完整，等待更多数据；
+                # 防御：含 '@' 但始终无 '+' 的异常数据会使缓冲区无限增长，超限则丢弃
+                if len(self._arm_buffer) > self.MAX_ARM_BUFFER:
+                    logger.warning("[ARM-RX] 缓冲区超限 (%d 字节)，丢弃异常数据", len(self._arm_buffer))
+                    self._arm_buffer = ""
                 break
 
             # 提取完整帧
@@ -483,7 +530,9 @@ class PassthroughGateway:
             logger.info("[ARM-RX] 解析指令: %s, 参数: %s", cmd_type, params)
 
             if cmd_type == "START_TEST":
-                self._handle_start_test(params)
+                # 投递到工作线程处理（含等待测试结果，最长 2×timeout），
+                # 接收线程不可阻塞，否则测试期间无法继续接收机械臂数据
+                self._test_queue.put(params)
             else:
                 logger.warning("[ARM-RX] 不支持的指令类型: %s", cmd_type)
 
@@ -520,11 +569,14 @@ class PassthroughGateway:
         # 更新状态为测试中
         self._set_state(GatewayState.FORWARDING)
 
-        # 重置测试结果
+        # 重置测试结果与完成事件。
+        # 注意：clear() 必须在派发测试之前执行，否则先于 clear() 到达的
+        # 完成回调所置位的事件会被擦除，导致结果已齐全仍等满超时
         with self._test_lock:
             self._test_results.clear()
             for dut_idx in dut_indices:
                 self._test_results[dut_idx] = None
+        self._test_complete_event.clear()
 
         # 检查设备管理器是否就绪
         if not self._device_manager:
@@ -540,15 +592,25 @@ class PassthroughGateway:
         failed_duts = [dut for dut, success in results.items() if not success]
         if failed_duts:
             logger.error("[ARM-RX] 以下 DUT 启动失败: %s", failed_duts)
-            # 标记失败的结果
+            # 标记失败的结果；若至此结果已齐全（如全部启动失败），
+            # 必须主动置位事件——启动失败的 DUT 不会再有任何完成回调
+            all_complete = False
             with self._test_lock:
                 for dut_idx in failed_duts:
-                    self._test_results[dut_idx] = "EEEE"
+                    if self._test_results.get(dut_idx) is None:
+                        self._test_results[dut_idx] = "EEEE"
+                all_complete = all(code is not None for code in self._test_results.values())
+            if all_complete:
+                self._test_complete_event.set()
 
         # 事件驱动等待：等待所有测试完成或超时
         timeout = self._config.test_timeout * 2  # 使用较长的超时时间
-        self._test_complete_event.clear()
         self._test_complete_event.wait(timeout=timeout)
+
+        # 网关停止时中止会话，不再向机械臂发送结果
+        if not self._running:
+            logger.info("[ARM-RX] 网关已停止，中止本次测试会话")
+            return
 
         # 收集结果
         with self._test_lock:
@@ -646,7 +708,9 @@ class PassthroughGateway:
             group: 组号。
             error_codes: 8 个错误码列表。
         """
-        if not self._arm_adapter:
+        # 局部引用：避免 stop() 并发将 self._arm_adapter 置 None 导致空指针
+        arm_adapter = self._arm_adapter
+        if not arm_adapter:
             logger.error("[ARM-TX] 机械臂未连接，无法发送响应")
             return
 
@@ -654,8 +718,8 @@ class PassthroughGateway:
         response = ArmProtocol.build_test_done(group, error_codes)
 
         # 发送响应
-        if hasattr(self._arm_adapter, 'send_raw'):
-            success = self._arm_adapter.send_raw(response)
+        if hasattr(arm_adapter, 'send_raw'):
+            success = arm_adapter.send_raw(response)
             if success:
                 logger.info("[ARM-TX] 已发送 TEST_DONE: %s", response)
             else:
@@ -679,7 +743,9 @@ class PassthroughGateway:
         """
         logger.error("[ARM-TX] 错误: %s", error_msg)
 
-        if not self._arm_adapter:
+        # 局部引用：避免 stop() 并发将 self._arm_adapter 置 None 导致空指针
+        arm_adapter = self._arm_adapter
+        if not arm_adapter:
             logger.error("[ARM-TX] 机械臂未连接，无法发送错误响应")
             return
 
@@ -687,8 +753,8 @@ class PassthroughGateway:
         error_codes = ["EEEE"] * 8
         response = ArmProtocol.build_test_done("FF", error_codes)
 
-        if hasattr(self._arm_adapter, 'send_raw'):
-            success = self._arm_adapter.send_raw(response)
+        if hasattr(arm_adapter, 'send_raw'):
+            success = arm_adapter.send_raw(response)
             if success:
                 logger.info("[ARM-TX] 已发送异常中止信号: %s", response)
             else:

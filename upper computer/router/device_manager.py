@@ -129,15 +129,19 @@ class DeviceManager:
         logger.info("停止设备管理器...")
         self._running = False
 
+        # 锁内只取快照，disconnect 在锁外执行：
+        # disconnect 内部会 join 线程（最长数秒）并触发状态回调，
+        # 持锁执行会长时间阻塞其它线程并有回调重入锁的风险
         with self._lock:
-            for dut_index, adapter in self._adapters.items():
-                try:
-                    adapter.disconnect()
-                except Exception as e:
-                    logger.warning("断开 DUT#%d 连接时出错: %s", dut_index, e)
-
+            adapters = dict(self._adapters)
             self._adapters.clear()
             self._pending_tests.clear()
+
+        for dut_index, adapter in adapters.items():
+            try:
+                adapter.disconnect()
+            except Exception as e:
+                logger.warning("断开 DUT#%d 连接时出错: %s", dut_index, e)
 
         logger.info("设备管理器已停止")
 
@@ -165,14 +169,15 @@ class DeviceManager:
 
         logger.info("初始化 DUT#%d: %s (%s:%d)", dut_index, name, ip, port)
 
-        # 创建适配器
-        # 创建适配器（不传入 on_error，因为错误已在 on_test_complete 中处理）
+        # 创建适配器（必须接线 on_error：测试超时仅通过 on_error 上报，
+        # 不接线则超时结果永远传不到网关，网关只能等满 2×timeout）
         adapter = TC3720TcpAdapter(
             host=ip,
             port=port,
             reconnect_interval=5.0,
             on_status_changed=lambda s, di=dut_index: self._on_device_status(di, s),
             on_test_complete=lambda ec, di=dut_index, dn=name, ip_=ip, pt=port: self._on_device_test_complete(di, dn, ip_, pt, ec),
+            on_error=lambda msg, di=dut_index: self._on_device_error(di, msg),
         )
 
         with self._lock:

@@ -212,7 +212,11 @@ class BaseArmAdapter(ABC):
         self._receive_thread.start()
 
     def _receive_loop(self) -> None:
-        """接收数据主循环。"""
+        """接收数据主循环。
+
+        解码后直接交由上层网关解析（网关自带分帧缓冲），
+        基类不再累积 self._buffer，避免只写入不消费导致的内存泄漏。
+        """
         logger.info("接收线程启动")
 
         while self._running and self._connected:
@@ -222,11 +226,7 @@ class BaseArmAdapter(ABC):
                     threading.Event().wait(0.1)
                     continue
 
-                # 解码并追加到缓冲区
                 message = data.decode("utf-8", errors="replace")
-                with self._lock:
-                    self._buffer += message
-
                 logger.debug("收到原始数据: %r", message)
 
                 # 触发数据接收回调（由上层网关处理协议解析）
