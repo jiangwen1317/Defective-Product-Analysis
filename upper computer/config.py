@@ -111,7 +111,6 @@ def get_gateway_config(config: dict[str, Any] | None = None) -> GatewayConfig:
         arm_serial_parity=str(gw.get("arm_serial_parity", "N")),
         # 测试配置
         test_timeout=float(test_timeout),
-        enable_debug=bool(gw.get("enable_debug", False)),
         # 多设备配置
         devices_config=devices_config,
     )

@@ -250,11 +250,6 @@ class ArmProtocol:
         )
 
     @staticmethod
-    def _validate_hex2(value: str) -> bool:
-        """验证2位十六进制数（任意值）。"""
-        return bool(re.fullmatch(r"^[0-9A-Fa-f]{2}$", value))
-
-    @staticmethod
     def _validate_hex4(value: str) -> bool:
         """验证4位十六进制数（大写 A-F）。
 

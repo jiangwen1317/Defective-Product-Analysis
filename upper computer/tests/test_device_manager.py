@@ -14,7 +14,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from router.device_manager import DeviceManager, DeviceConfig, TestResult
+from router.device_manager import DeviceManager, TestResult
 from adapters import TC3720Status
 
 
@@ -206,19 +206,3 @@ class TestTestResult:
         assert result.port == 9090
         assert result.error_code == "1901"
         assert result.success is True
-
-
-class TestDeviceConfig:
-    """DeviceConfig 数据类测试。"""
-
-    def test_device_config_port_conversion(self):
-        """测试端口类型转换。"""
-        config = DeviceConfig(
-            ip="192.168.1.101",
-            port="9090",  # 字符串类型
-            name="Board-1",
-        )
-
-        # 应该自动转换为整数
-        assert config.port == 9090
-        assert isinstance(config.port, int)

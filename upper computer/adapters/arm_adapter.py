@@ -112,13 +112,6 @@ class ArmAdapter(BaseArmAdapter):
         return self._port
 
     @property
-    def target_address(self) -> str | None:
-        """获取目标连接地址（Client 模式）。"""
-        if self._mode == ArmAdapterMode.CLIENT:
-            return f"{self._target_host}:{self._target_port}"
-        return None
-
-    @property
     def client_address(self) -> str | None:
         """获取已连接客户端的地址。"""
         with self._lock:
@@ -207,7 +200,6 @@ class ArmAdapter(BaseArmAdapter):
             with self._lock:
                 self._client_socket = sock
                 self._connected = True
-                self._buffer = ""
 
             logger.info("已连接到目标: %s:%d", self._target_host, self._target_port)
             self._on_connected_internal()
@@ -240,10 +232,6 @@ class ArmAdapter(BaseArmAdapter):
                 except Exception:
                     pass
                 self._server_socket = None
-
-    def _is_physical_connected(self) -> bool:
-        """检查物理连接是否有效。"""
-        return self._connected and self._client_socket is not None
 
     def _read_available(self) -> bytes | None:
         """读取可用数据。"""
@@ -319,7 +307,6 @@ class ArmAdapter(BaseArmAdapter):
 
             self._client_socket = client_socket
             self._connected = True
-            self._buffer = ""
 
         # 设置 socket 超时
         client_socket.settimeout(self.SOCKET_TIMEOUT)
@@ -333,19 +320,15 @@ class ArmAdapter(BaseArmAdapter):
                 if data is None:
                     continue
 
-                # 解码并追加到缓冲区
-                message = data.decode("utf-8")
-                with self._lock:
-                    self._buffer += message
+                # 解码（与基类一致用 replace 容错：
+                # 设备上电噪声等非 UTF-8 字节不应导致整条连接被断开）
+                message = data.decode("utf-8", errors="replace")
 
                 logger.debug("收到原始数据: %r", message)
 
-                # 触发数据接收回调
+                # 触发数据接收回调（由上层网关分帧与解析）
                 if self._on_data_received:
                     self._on_data_received(message)
-
-                # 处理完整帧
-                self._process_buffer()
 
         except Exception as e:
             logger.error("连接处理异常: %s", e)

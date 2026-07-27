@@ -14,7 +14,6 @@ import time
 from typing import Callable
 
 import serial
-import serial.tools.list_ports
 
 from adapters.base_arm_adapter import BaseArmAdapter
 
@@ -28,9 +27,6 @@ class SerialArmAdapter(BaseArmAdapter):
 
     使用独立线程持续读取串口数据，事件驱动回调通知上层应用。
     """
-
-    # 常用波特率选项
-    BAUDRATES = [9600, 19200, 38400, 57600, 115200]
 
     # 默认串口配置
     DEFAULT_BAUDRATE: int = 115200
@@ -101,16 +97,6 @@ class SerialArmAdapter(BaseArmAdapter):
         with self._lock:
             return self._connected and self._serial is not None and self._serial.is_open
 
-    @staticmethod
-    def get_available_ports() -> list[str]:
-        """获取系统中可用的串口列表。
-
-        Returns:
-            可用串口名称列表。
-        """
-        ports = serial.tools.list_ports.comports()
-        return [port.device for port in ports]
-
     def start(self) -> bool:
         """启动适配器，打开串口并开始监听。
 
@@ -148,7 +134,6 @@ class SerialArmAdapter(BaseArmAdapter):
 
             with self._lock:
                 self._connected = True
-                self._buffer = ""
 
             logger.info("串口已打开: %s", self._port)
             self._on_connected_internal()
@@ -171,10 +156,6 @@ class SerialArmAdapter(BaseArmAdapter):
                 except Exception:
                     pass
                 self._serial = None
-
-    def _is_physical_connected(self) -> bool:
-        """检查物理连接是否有效。"""
-        return self._connected and self._serial is not None and self._serial.is_open
 
     def _read_available(self) -> bytes | None:
         """读取可用数据。"""

@@ -30,7 +30,8 @@ from ui.main_window import main
 def setup_logging() -> None:
     """配置日志系统，支持控制台和文件双输出。
 
-    日志文件使用追加模式，支持自动轮转（通过外部工具如 logrotate）。
+    日志文件以追加模式写入 logs/gateway.log，暂未做自动轮转，
+    长期运行需定期手动清理。
     """
     # 确保日志目录存在
     log_dir = Path("logs")
@@ -65,7 +66,8 @@ def setup_logging() -> None:
         mode="a",
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.DEBUG)  # 文件记录 DEBUG 级别
+    # 与根 logger 保持一致：根 logger 为 INFO 级，更低级别的消息到不了 handler
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
@@ -83,7 +85,7 @@ def preflight_check() -> bool:
     config_path = project_root / "config.json"
     if not config_path.exists():
         print("错误: 配置文件 config.json 不存在", file=sys.stderr)
-        print("提示: 请复制 config.example.json 为 config.json 并修改配置", file=sys.stderr)
+        print("提示: 请复制 config_serial_example.json 为 config.json 并修改配置", file=sys.stderr)
         return False
 
     # 检查日志目录可写

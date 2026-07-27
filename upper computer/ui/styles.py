@@ -66,24 +66,6 @@ COLOR_TEST_FAILED = "#ef4444"        # 测试失败
 COLOR_ACCENT = "#3b82f6"          # 链接、强调
 COLOR_ACCENT_HOVER = "#60a5fa"    # 悬停强调
 
-# 状态机颜色映射
-STATE_COLORS = {
-    "idle": ("#6b7280", "#6b728020"),          # 灰色 - 空闲
-    "received_start": ("#3b82f6", "#3b82f620"), # 蓝色 - 收到请求
-    "forwarded_3720": ("#f59e0b", "#f59e0b20"), # 橙色 - 转发中
-    "waiting_result": ("#8b5cf6", "#8b5cf620"), # 紫色 - 等待结果
-    "auto_reply": ("#22c55e", "#22c55e20"),     # 绿色 - 回传完成
-    "error": ("#ef4444", "#ef444420"),          # 红色 - 异常
-}
-
-# 连接状态颜色
-CONNECTION_STATUS_COLORS = {
-    "online": ("#22c55e", "#22c55e30"),
-    "offline": ("#6b7280", "#6b728030"),
-    "error": ("#ef4444", "#ef444430"),
-    "testing": ("#f59e0b", "#f59e0b30"),
-}
-
 
 # ============================================================================
 # 字体系统
@@ -121,166 +103,8 @@ RADIUS_FULL = 9999
 
 
 # ============================================================================
-# 阴影系统
-# ============================================================================
-
-SHADOW_SM = "0 1px 2px rgba(0, 0, 0, 0.3)"
-SHADOW_MD = "0 4px 6px rgba(0, 0, 0, 0.3)"
-SHADOW_LG = "0 10px 15px rgba(0, 0, 0, 0.4)"
-SHADOW_GLOW_SUCCESS = "0 0 20px rgba(34, 197, 94, 0.4)"
-SHADOW_GLOW_ERROR = "0 0 20px rgba(239, 68, 68, 0.4)"
-SHADOW_GLOW_INFO = "0 0 20px rgba(59, 130, 246, 0.4)"
-
-
-# ============================================================================
 # QSS 样式表
 # ============================================================================
-
-# 基础样式
-QSS_BASE = f"""
-QWidget {{
-    background-color: {COLOR_BG_PRIMARY};
-    color: {COLOR_TEXT_PRIMARY};
-    font-family: {FONT_FAMILY};
-    font-size: {FONT_SIZE_BASE};
-}}
-"""
-
-# 应用整体样式
-QSS_APP = f"""
-QWidget {{
-    background-color: {COLOR_BG_PRIMARY};
-    color: {COLOR_TEXT_PRIMARY};
-    font-family: {FONT_FAMILY};
-    font-size: {FONT_SIZE_BASE};
-}}
-
-QGroupBox {{
-    border: 1px solid {COLOR_BORDER};
-    border-radius: {RADIUS_MD};
-    margin-top: 10px;
-    padding-top: 10px;
-    font-weight: bold;
-    color: {COLOR_TEXT_SECONDARY};
-}}
-
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    padding: 0 5px;
-    color: {COLOR_TEXT_SECONDARY};
-}}
-
-QLineEdit, QComboBox, QSpinBox {{
-    background-color: {COLOR_BG_TERTIARY};
-    color: {COLOR_TEXT_PRIMARY};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: {RADIUS_SM};
-    padding: 6px 10px;
-    selection-background-color: {COLOR_ACCENT};
-}}
-
-QLineEdit:focus, QComboBox:focus {{
-    border-color: {COLOR_BORDER_FOCUS};
-}}
-
-QLineEdit:disabled, QComboBox:disabled {{
-    color: {COLOR_TEXT_DISABLED};
-    background-color: {COLOR_BG_SECONDARY};
-}}
-
-QComboBox {{
-    padding-right: 20px;
-}}
-
-QComboBox::drop-down {{
-    border: none;
-    width: 20px;
-}}
-
-QComboBox::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {COLOR_TEXT_MUTED};
-    margin-right: 8px;
-}}
-
-QPushButton {{
-    background-color: {COLOR_BG_TERTIARY};
-    color: {COLOR_TEXT_PRIMARY};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: {RADIUS_SM};
-    padding: 8px 16px;
-    font-weight: 500;
-}}
-
-QPushButton:hover {{
-    background-color: {COLOR_BG_HOVER};
-    border-color: {COLOR_TEXT_MUTED};
-}}
-
-QPushButton:pressed {{
-    background-color: {COLOR_BG_SECONDARY};
-}}
-
-QPushButton:disabled {{
-    color: {COLOR_TEXT_DISABLED};
-    background-color: {COLOR_BG_SECONDARY};
-    border-color: {COLOR_BORDER};
-}}
-
-QScrollBar:vertical {{
-    background-color: transparent;
-    width: 8px;
-    border-radius: 4px;
-    margin: 2px;
-}}
-
-QScrollBar::handle:vertical {{
-    background-color: {COLOR_TEXT_MUTED};
-    border-radius: 4px;
-    min-height: 20px;
-}}
-
-QScrollBar::handle:vertical:hover {{
-    background-color: {COLOR_TEXT_SECONDARY};
-}}
-
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-    height: 0px;
-}}
-
-QScrollBar:horizontal {{
-    background-color: transparent;
-    height: 8px;
-    border-radius: 4px;
-    margin: 2px;
-}}
-
-QScrollBar::handle:horizontal {{
-    background-color: {COLOR_TEXT_MUTED};
-    border-radius: 4px;
-    min-width: 20px;
-}}
-
-QScrollBar::handle:horizontal:hover {{
-    background-color: {COLOR_TEXT_SECONDARY};
-}}
-
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-    width: 0px;
-}}
-
-QToolTip {{
-    background-color: {COLOR_BG_TERTIARY};
-    color: {COLOR_TEXT_PRIMARY};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: {RADIUS_SM};
-    padding: 6px 10px;
-    font-size: {FONT_SIZE_SM};
-}}
-"""
 
 # 卡片容器样式
 def card_style(bg_color: str = "#161822", border_color: str = "#2a2e3d") -> str:
@@ -315,20 +139,16 @@ def test_button_style(
         font-weight: bold;
         padding: 14px 24px;
         min-height: 48px;
-        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
     }}
     QPushButton:hover {{
         background-color: {hover_color};
-        box-shadow: 0 6px 20px rgba(34, 197, 94, 0.45);
     }}
     QPushButton:pressed {{
         background-color: {bg_color};
-        box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
     }}
     QPushButton:disabled {{
         background-color: {COLOR_TEXT_DISABLED};
         color: {COLOR_BG_SECONDARY};
-        box-shadow: none;
     }}
     """
 
@@ -351,31 +171,5 @@ def secondary_button_style() -> str:
     }}
     QPushButton:pressed {{
         background-color: {COLOR_BG_SECONDARY};
-    }}
-    """
-
-
-# DUT 网格项样式
-def dut_item_style(status: str = "offline") -> str:
-    """生成 DUT 网格项样式。
-
-    Args:
-        status: 状态 ('offline', 'online', 'testing', 'success', 'failed')
-    """
-    colors = {
-        "offline": (COLOR_IDLE, COLOR_IDLE_BG),
-        "online": (COLOR_SUCCESS, COLOR_SUCCESS_BG),
-        "testing": (COLOR_TEST_ACTIVE, "#f59e0b20"),
-        "success": (COLOR_SUCCESS, COLOR_SUCCESS_BG),
-        "failed": (COLOR_ERROR, COLOR_ERROR_BG),
-    }
-    color, bg = colors.get(status, (COLOR_IDLE, COLOR_IDLE_BG))
-    return f"""
-    QFrame {{
-        background-color: {bg};
-        border: 1px solid {COLOR_BORDER};
-        border-radius: {RADIUS_SM};
-        min-width: 60px;
-        min-height: 50px;
     }}
     """

@@ -3,8 +3,7 @@
 
 提供 TCP 和串口适配器的公共功能：
 - 连接状态管理
-- 缓冲区处理
-- 协议帧解析
+- 接收循环（数据直接交由上层网关分帧与解析）
 - 线程安全重连控制
 """
 
@@ -12,8 +11,6 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from typing import Callable
-
-from protocol.arm_protocol import ArmProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +20,7 @@ class BaseArmAdapter(ABC):
 
     定义适配器必须实现的方法，提供公共功能：
     - 统一的连接状态管理
-    - 缓冲区处理
-    - 协议帧解析
+    - 接收循环（数据直接交由上层网关分帧与解析）
     - 线程安全重连控制
     """
 
@@ -61,10 +57,7 @@ class BaseArmAdapter(ABC):
         self._reconnecting = False
         self._reconnect_lock = threading.Lock()
 
-        # 读取缓冲区
-        self._buffer = ""
-
-        # 锁
+        # 读取线程控制
         self._lock = threading.Lock()
 
     @property
@@ -72,15 +65,6 @@ class BaseArmAdapter(ABC):
         """机械臂是否已连接。"""
         with self._lock:
             return self._connected
-
-    @abstractmethod
-    def _is_physical_connected(self) -> bool:
-        """检查物理连接是否有效（子类实现）。
-
-        Returns:
-            连接是否有效。
-        """
-        ...
 
     @abstractmethod
     def _do_connect(self) -> bool:
@@ -154,7 +138,7 @@ class BaseArmAdapter(ABC):
             self._reconnect_thread.join(timeout=1.0)
             self._reconnect_thread = None
 
-        # 等待主线程结束
+        # 等待接收线程结束
         self._wait_for_receive_thread()
 
         # 清理资源
@@ -215,7 +199,7 @@ class BaseArmAdapter(ABC):
         """接收数据主循环。
 
         解码后直接交由上层网关解析（网关自带分帧缓冲），
-        基类不再累积 self._buffer，避免只写入不消费导致的内存泄漏。
+        基类不做任何缓冲累积。
         """
         logger.info("接收线程启动")
 
@@ -241,44 +225,6 @@ class BaseArmAdapter(ABC):
 
         logger.info("接收线程退出")
         self._on_disconnected_internal()
-
-    def _process_buffer(self) -> None:
-        """处理缓冲区中的数据，提取完整帧。
-
-        优化：对于分片到达的数据，只记录 debug 级别日志，
-        避免大量 "无法解析" 警告干扰用户。
-        """
-        frames_to_process: list[tuple[str, dict]] = []
-
-        with self._lock:
-            buffer_copy = self._buffer
-
-            while "+" in buffer_copy:
-                frame, buffer_copy = buffer_copy.split("+", 1)
-                frame += "+"
-
-                result = ArmProtocol.parse_command(frame)
-                if result:
-                    frames_to_process.append(result)
-                else:
-                    # 检查是否是可能不完整的帧（以 @ 开头但解析失败）
-                    if frame.strip().startswith("@"):
-                        # 可能是分片数据，debug 级别记录
-                        logger.debug("收到分片数据，等待完整帧: %r", frame[:50])
-                    else:
-                        # 非协议数据（如配置信息），忽略
-                        logger.debug("忽略非协议数据: %r", frame[:50])
-
-            self._buffer = buffer_copy
-
-        # 在锁外执行回调
-        for cmd_type, params in frames_to_process:
-            if cmd_type == "START_TEST":
-                group = params.get("group", "")
-                bitmask = params.get("bitmask", "")
-                logger.info("收到 START_TEST - Group: %s, Bitmask: %s", group, bitmask)
-            else:
-                logger.info("收到指令: %s", cmd_type)
 
     def _on_connected_internal(self) -> None:
         """内部连接成功处理。"""
@@ -323,16 +269,3 @@ class BaseArmAdapter(ABC):
                 return False
 
             return self._write_data(data)
-
-    def send_test_done(self, group: str, error_codes: list[str]) -> bool:
-        """向机械臂发送 TEST_DONE 指令。
-
-        Args:
-            group: 组号（2位十六进制）。
-            error_codes: 8个错误码列表。
-
-        Returns:
-            发送是否成功。
-        """
-        command = ArmProtocol.build_test_done(group, error_codes)
-        return self.send_raw(command)

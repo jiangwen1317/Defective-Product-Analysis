@@ -5,7 +5,7 @@
 支持多设备管理，根据 Bitmask 路由到对应的 3720 测试仪。
 """
 
-from .device_manager import DeviceConfig, DeviceManager, TestResult
+from .device_manager import DeviceManager, TestResult
 from .gateway import (
     ErrorCode,
     GatewayConfig,
@@ -21,6 +21,5 @@ __all__ = [
     "TransferRecord",
     "ErrorCode",
     "DeviceManager",
-    "DeviceConfig",
     "TestResult",
 ]

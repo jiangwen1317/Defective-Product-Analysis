@@ -23,14 +23,14 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from PyQt5.QtCore import QEvent, Qt, pyqtSignal
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -46,7 +46,6 @@ from ui.components import (
     ConnectionStatus,
     DutGridPanel,
     StatsPanel,
-    StatusIndicator,
     TestProgressPanel,
 )
 from config import get_configured_dut_indices, get_gateway_config, get_ui_config, load_config
@@ -55,32 +54,21 @@ from ui.styles import (
     COLOR_ACCENT,
     COLOR_ACCENT_HOVER,
     COLOR_BG_PRIMARY,
-    COLOR_BG_SECONDARY,
     COLOR_BG_TERTIARY,
     COLOR_BORDER,
     COLOR_ERROR,
     COLOR_IDLE,
-    COLOR_INFO,
-    COLOR_PROCESSING,
     COLOR_SUCCESS,
-    COLOR_TEST_ACTIVE,
     COLOR_TEXT_MUTED,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
-    COLOR_WARNING,
     FONT_MONO,
     FONT_SIZE_BASE,
-    FONT_SIZE_LG,
     FONT_SIZE_SM,
-    FONT_SIZE_XL,
-    FONT_SIZE_XS,
     RADIUS_MD,
     RADIUS_SM,
     SPACING_LG,
     SPACING_MD,
-    SPACING_SM,
-    SPACING_XL,
-    SPACING_XS,
     secondary_button_style,
     test_button_style,
 )
@@ -91,7 +79,7 @@ logger = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     """机械臂上位机主窗口。
 
-    采用三栏布局的专业级监控系统界面。
+    采用两栏布局的专业级监控系统界面（左侧测试区 + 右侧状态区）。
     """
 
     # 跨线程通信信号：网关回调在工作线程触发，通过信号转发到主线程执行 UI 更新
@@ -131,7 +119,6 @@ class MainWindow(QMainWindow):
         self._arm_connection: ConnectionStatus | None = None
         self._alarm_card: Card | None = None
         self._task_group_label: QLabel | None = None
-        self._dut_connections: dict[int, ConnectionStatus] = {}  # DUT 状态字典
 
         # 跨线程信号接线（需先于网关初始化，确保回调触发时槽已就绪）
         self._sig_state_changed.connect(self._update_flow_display_safe)
@@ -445,9 +432,11 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(toolbar)
 
-        # 日志文本区
+        # 日志文本区（文档行数与 _log_buffer 同上限，
+        # 防止长期运行时富文本文档无限膨胀导致内存增长与界面卡顿）
         self._log_text = QTextEdit()
         self._log_text.setReadOnly(True)
+        self._log_text.document().setMaximumBlockCount(self._log_buffer.maxlen or 5000)
         self._log_text.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {COLOR_BG_PRIMARY};
@@ -1013,10 +1002,6 @@ class MainWindow(QMainWindow):
             # 更新 DUT 网格面板
             if hasattr(self, '_dut_grid_panel') and self._dut_grid_panel is not None:
                 self._dut_grid_panel.set_dut_status(dut_index, mapped_status)
-
-            # 兼容旧的连接状态字典（如果存在）
-            if hasattr(self, '_dut_connections') and self._dut_connections and dut_index in self._dut_connections:
-                self._dut_connections[dut_index].set_status(mapped_status)
         except Exception as e:
             logger.exception("更新 DUT#%d 显示失败: %s", dut_index, e)
 
@@ -1172,7 +1157,7 @@ class MainWindow(QMainWindow):
             logger.exception("更新测试完成显示失败: %s", e)
 
     def _log(self, level: str, message: str) -> None:
-        """添加日志条目（线程安全）。"""
+        """添加日志条目（仅限主线程调用；网关回调均经 pyqtSignal 转发到主线程）。"""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
         # 颜色映射
@@ -1226,12 +1211,17 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "导出失败", str(e))
 
-    def closeEvent(self, event: QEvent) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         """窗口关闭事件（退出时同步停止网关，允许短暂阻塞）。"""
         if self._gateway and self._gateway.is_running:
             self._gateway.stop()
 
         event.accept()
+
+
+def _show_startup_error(message: str) -> None:
+    """显示启动失败弹窗（配置错误等致命异常）。"""
+    QMessageBox.critical(None, "启动失败", message)
 
 
 def main() -> None:
@@ -1241,7 +1231,7 @@ def main() -> None:
         日志已在 main.py 的 setup_logging() 中配置，
         此处不应重复配置。
     """
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
 
     # 设置暗色主题
@@ -1296,7 +1286,17 @@ def main() -> None:
         }}
     """)
 
-    window = MainWindow()
+    # 配置缺失/损坏时 get_gateway_config 会抛 ValueError，
+    # 必须弹窗告知用户而非黑框闪退
+    try:
+        window = MainWindow()
+    except Exception as e:
+        logger.exception("主窗口初始化失败: %s", e)
+        _show_startup_error(
+            f"程序启动失败：{e}\n\n请检查 config.json 配置后重试。"
+        )
+        sys.exit(1)
+
     window.show()
 
     try:

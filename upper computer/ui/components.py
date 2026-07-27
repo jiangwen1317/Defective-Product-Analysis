@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from PyQt5.QtCore import Qt, QTimer, QEvent, pyqtSignal
+from PyQt5.QtCore import Qt, QEvent, pyqtSignal
 from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -49,7 +49,7 @@ from ui.styles import (
 class StatusIndicator(QWidget):
     """状态指示器组件。
 
-    显示一个带发光效果的状态圆点。
+    显示一个按状态着色的圆点。
     """
 
     def __init__(
@@ -68,8 +68,6 @@ class StatusIndicator(QWidget):
         super().__init__(parent)
         self._status = status
         self._size = size
-        self._pulsing = False
-        self._pulse_timer: QTimer | None = None
 
         self.setFixedSize(size + 4, size + 4)
         self._update_style()
@@ -90,22 +88,11 @@ class StatusIndicator(QWidget):
         """更新样式。"""
         color = self._get_color()
         size = self._size
-        glow = self._status in ("online", "error", "processing")
-
-        shadow = ""
-        if glow:
-            shadows = {
-                COLOR_SUCCESS: "0 0 12px rgba(34, 197, 94, 0.6)",
-                COLOR_ERROR: "0 0 12px rgba(239, 68, 68, 0.6)",
-                COLOR_PROCESSING: "0 0 12px rgba(139, 92, 246, 0.6)",
-            }
-            shadow = shadows.get(color, "")
 
         self.setStyleSheet(f"""
             QWidget {{
                 background-color: {color};
                 border-radius: {size // 2}px;
-                {"box-shadow: " + shadow if shadow else ""}
             }}
         """)
 
@@ -113,31 +100,6 @@ class StatusIndicator(QWidget):
         """设置状态。"""
         self._status = status
         self._update_style()
-
-    def start_pulse(self) -> None:
-        """开始脉冲动画。"""
-        if self._pulsing:
-            return
-        self._pulsing = True
-
-        self._pulse_timer = QTimer(self)
-        self._pulse_timer.timeout.connect(self._on_pulse)
-        self._pulse_timer.start(800)
-
-    def stop_pulse(self) -> None:
-        """停止脉冲动画。"""
-        self._pulsing = False
-        if self._pulse_timer:
-            self._pulse_timer.stop()
-            self._pulse_timer = None
-
-    def _on_pulse(self) -> None:
-        """脉冲动画回调。"""
-        current = self.windowOpacity()
-        if current > 0.5:
-            self.setWindowOpacity(0.3)
-        else:
-            self.setWindowOpacity(1.0)
 
 
 class Card(QFrame):
@@ -212,22 +174,9 @@ class Card(QFrame):
 
         return title_bar
 
-    def add_title_widget(self, widget: QWidget) -> None:
-        """添加标题栏部件。"""
-        if self._title_widget:
-            layout = self._title_widget.layout()
-            # 移除弹性空间
-            layout.removeItem(self._title_spacer)
-            layout.addWidget(widget)
-            layout.addSpacerItem(self._title_spacer)
-
     def content_layout(self) -> QVBoxLayout:
         """获取内容布局。"""
         return self._content_layout
-
-    def add_content(self, widget: QWidget, stretch: int = 0) -> None:
-        """添加内容部件。"""
-        self._content_layout.addWidget(widget, stretch)
 
 
 class StatCard(QWidget):
@@ -474,56 +423,6 @@ class ConnectionStatus(QWidget):
             self._status_label.setText(status_text)
 
 
-class InfoRow(QWidget):
-    """信息行组件。
-
-    显示单个键值对信息。
-    """
-
-    def __init__(
-        self,
-        label: str,
-        value: str = "-",
-        parent: QWidget | None = None,
-    ) -> None:
-        """初始化信息行。
-
-        Args:
-            label: 标签
-            value: 值
-            parent: 父部件
-        """
-        super().__init__(parent)
-        self._setup_ui(label, value)
-
-    def _setup_ui(self, label: str, value: str) -> None:
-        """设置 UI。"""
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, SPACING_XS, 0, SPACING_XS)
-        layout.setSpacing(SPACING_MD)
-
-        label_widget = QLabel(label)
-        label_widget.setStyleSheet(f"""
-            color: {COLOR_TEXT_MUTED};
-            font-size: {FONT_SIZE_SM};
-        """)
-        layout.addWidget(label_widget)
-
-        layout.addStretch()
-
-        self._value_widget = QLabel(value)
-        self._value_widget.setStyleSheet(f"""
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {FONT_SIZE_SM};
-            font-family: {FONT_MONO};
-        """)
-        layout.addWidget(self._value_widget)
-
-    def set_value(self, value: str) -> None:
-        """设置值。"""
-        self._value_widget.setText(value)
-
-
 class DutGridPanel(QWidget):
     """DUT 状态网格面板。
 
@@ -667,7 +566,7 @@ class DutGridPanel(QWidget):
         return frame
 
     def eventFilter(self, obj, event) -> bool:
-        """事件过滤器，处理悬停效果和点击事件。"""
+        """事件过滤器，处理 DUT 项的点击事件（悬停效果由 CSS :hover 处理）。"""
         # 获取 dut_index
         obj_name = obj.objectName()
         if obj_name.startswith("dut_"):
@@ -676,30 +575,10 @@ class DutGridPanel(QWidget):
             except (ValueError, IndexError):
                 return super().eventFilter(obj, event)
 
-            if event.type() == QEvent.Enter:
-                self._on_dut_hover(dut_index, True)
-            elif event.type() == QEvent.Leave:
-                self._on_dut_hover(dut_index, False)
-            elif event.type() == QEvent.MouseButtonPress:
+            if event.type() == QEvent.MouseButtonPress:
                 self.dutClicked.emit(dut_index)
 
         return super().eventFilter(obj, event)
-
-    def _on_dut_hover(self, dut_index: int, entering: bool) -> None:
-        """处理 DUT 悬停效果。"""
-        frame = self._dut_widgets.get(dut_index)
-        if frame is None:
-            return
-
-        # 如果当前有状态样式（不是默认样式），不处理悬停
-        if dut_index in self._dut_original_styles:
-            pass  # CSS hover 已经处理样式效果
-
-    def _restore_dut_style(self, dut_index: int) -> None:
-        """恢复 DUT 默认样式。"""
-        frame = self._dut_widgets.get(dut_index)
-        if frame and dut_index in self._dut_original_styles:
-            frame.setStyleSheet(self._dut_original_styles[dut_index])
 
     def set_dut_status(self, dut_index: int, status: str) -> None:
         """设置单个 DUT 的状态。
@@ -764,7 +643,7 @@ class DutGridPanel(QWidget):
         }
         text_color = text_colors.get(status, "#6b7280")
 
-        # 使用 f-string 动态生成样式（注意 f 前缀！）
+        # 动态生成带状态色的样式
         frame.setStyleSheet(f"""
             QFrame#dut_{dut_index} {{
                 background-color: {bg_color};
@@ -890,7 +769,6 @@ class TestProgressPanel(QWidget):
 
         # 更新状态
         self._status_indicator.set_status("processing")
-        self._status_indicator.start_pulse()
         self._status_label.setText("测试进行中...")
         self._status_label.setStyleSheet(f"color: {COLOR_PROCESSING}; font-size: {FONT_SIZE_SM}; font-weight: 500;")
 
@@ -951,7 +829,6 @@ class TestProgressPanel(QWidget):
             results: 测试结果字典 {dut_index: error_code}
         """
         self._is_testing = False
-        self._status_indicator.stop_pulse()
 
         # 计算通过率
         passed = sum(1 for code in results.values() if code == "0000")
@@ -1005,7 +882,6 @@ class TestProgressPanel(QWidget):
     def reset(self) -> None:
         """重置面板状态。"""
         self._is_testing = False
-        self._status_indicator.stop_pulse()
         self._status_indicator.set_status("offline")
         self._status_label.setText("等待测试")
         self._status_label.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: {FONT_SIZE_SM}; font-weight: 500;")

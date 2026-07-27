@@ -19,25 +19,12 @@
 
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from typing import Callable
 
 from adapters import TC3720Status, TC3720TcpAdapter
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class DeviceConfig:
-    """单个 DUT 的设备配置。"""
-
-    ip: str
-    port: int
-    name: str
-
-    def __post_init__(self) -> None:
-        self.port = int(self.port)
 
 
 @dataclass
@@ -98,8 +85,8 @@ class DeviceManager:
         # 运行时状态
         self._running = False
 
-        # 待处理的测试请求
-        self._pending_tests: dict[int, dict] = {}  # dut_index -> {"start_time": float}
+        # 待处理测试请求的 DUT 编号集合
+        self._pending_tests: set[int] = set()
 
     def start(self) -> bool:
         """启动设备管理器，初始化所有设备连接。
@@ -219,8 +206,7 @@ class DeviceManager:
 
         # 清除待处理测试
         with self._lock:
-            if dut_index in self._pending_tests:
-                del self._pending_tests[dut_index]
+            self._pending_tests.discard(dut_index)
 
         # 取第一个错误码作为结果
         error_code = error_codes[0] if error_codes else "0000"
@@ -249,8 +235,7 @@ class DeviceManager:
 
         # 清除待处理测试
         with self._lock:
-            if dut_index in self._pending_tests:
-                del self._pending_tests[dut_index]
+            self._pending_tests.discard(dut_index)
 
         # 构建错误结果
         result = TestResult(
@@ -314,7 +299,6 @@ class DeviceManager:
             {dut_index: success} 字典。
         """
         results: dict[int, bool] = {}
-        start_time = time.time()
 
         for dut_index in dut_indices:
             adapter = self.get_adapter(dut_index)
@@ -335,10 +319,7 @@ class DeviceManager:
 
             # 记录待处理测试
             with self._lock:
-                self._pending_tests[dut_index] = {
-                    "start_time": start_time,
-                    "timeout": self._test_timeout,
-                }
+                self._pending_tests.add(dut_index)
 
             # 发送 START 信号（使用 trigger_test 设置待处理状态）
             success = adapter.trigger_test(timeout=self._test_timeout)
@@ -349,38 +330,7 @@ class DeviceManager:
             else:
                 logger.error("向 DUT#%d 发送启动信号失败", dut_index)
                 with self._lock:
-                    if dut_index in self._pending_tests:
-                        del self._pending_tests[dut_index]
-
-        return results
-
-    def abort_test(self, dut_indices: list[int] | None = None) -> dict[int, bool]:
-        """中止测试。
-
-        Args:
-            dut_indices: DUT 编号列表。为 None 时中止所有设备的测试。
-
-        Returns:
-            {dut_index: success} 字典。
-        """
-        if dut_indices is None:
-            with self._lock:
-                dut_indices = list(self._pending_tests.keys())
-
-        results: dict[int, bool] = {}
-
-        for dut_index in dut_indices:
-            adapter = self.get_adapter(dut_index)
-            if not adapter:
-                results[dut_index] = False
-                continue
-
-            success = adapter.abort_test()
-            results[dut_index] = success
-
-            with self._lock:
-                if dut_index in self._pending_tests:
-                    del self._pending_tests[dut_index]
+                    self._pending_tests.discard(dut_index)
 
         return results
 
@@ -413,25 +363,3 @@ class DeviceManager:
                     return False
 
         return True
-
-    def wait_all_complete(self, timeout: float | None = None) -> bool:
-        """等待所有设备测试完成。
-
-        Args:
-            timeout: 超时时间（秒）。为 None 时使用配置的 test_timeout。
-
-        Returns:
-            是否在超时前全部完成。
-        """
-        if timeout is None:
-            timeout = self._test_timeout * 2  # 默认超时为配置时间的 2 倍
-
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            if self.is_all_idle():
-                return True
-            time.sleep(0.1)
-
-        logger.warning("等待测试完成超时")
-        return False

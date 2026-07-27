@@ -24,13 +24,11 @@ class TC3720TcpAdapter:
 
     作为 TCP 客户端连接 3720 测试仪：
     - 连接管理（自动重连）
-    - 发送测试指令（使用 trigger_test() 方法）
+    - 发送测试启动信号（trigger_test() 方法）
     - 接收测试结果
     - 状态上报
 
     使用独立线程处理网络通信，事件驱动回调通知上层应用。
-
-    注意：start_test() 方法已弃用，请使用 trigger_test() 替代。
     """
 
     # 网络配置
@@ -48,7 +46,6 @@ class TC3720TcpAdapter:
         reconnect_interval: float = RECONNECT_INTERVAL,
         on_status_changed: Callable[[TC3720Status], None] | None = None,
         on_test_complete: Callable[[list[str]], None] | None = None,  # error_codes
-        on_data_received: Callable[[str], None] | None = None,  # DEPRECATED: 原始数据回调（已不使用）
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         """初始化 3720 TCP 适配器。
@@ -59,7 +56,6 @@ class TC3720TcpAdapter:
             reconnect_interval: 重连间隔秒数。
             on_status_changed: 状态变化回调。
             on_test_complete: 测试完成回调（返回错误码列表）。
-            on_data_received: 已弃用，无需使用。
             on_error: 错误发生回调。
         """
         self._host = host
@@ -67,7 +63,6 @@ class TC3720TcpAdapter:
         self._reconnect_interval = reconnect_interval
         self._on_status_changed = on_status_changed
         self._on_test_complete = on_test_complete
-        self._on_data_received = on_data_received
         self._on_error = on_error
 
         # 网络资源
@@ -257,43 +252,6 @@ class TC3720TcpAdapter:
         self._set_status(TC3720Status.OFFLINE)
         logger.info("3720 连接已断开")
 
-    def send_raw(self, data: str) -> bool:
-        """发送原始数据（透传模式使用）。
-
-        Args:
-            data: 要发送的原始字符串。
-
-        Returns:
-            发送是否成功。
-        """
-        acquired = self._lock.acquire(timeout=2.0)
-        if not acquired:
-            logger.error("获取锁超时")
-            return False
-
-        try:
-            if not self._connected or not self._socket:
-                logger.warning("3720 未连接，发送失败")
-                return False
-
-            self._socket.sendall(data.encode("utf-8"))
-            logger.debug("已发送数据到 3720 [%d 字节]", len(data))
-            return True
-
-        except Exception as e:
-            logger.error("发送数据到 3720 失败: %s", e)
-            self._connected = False
-            # 关闭 socket 促使接收线程尽快退出，由接收线程统一触发重连，
-            # 避免旧接收线程与重连后的新线程并发操作同一 socket
-            if self._socket:
-                try:
-                    self._socket.close()
-                except Exception:
-                    pass
-            return False
-        finally:
-            self._lock.release()
-
     def _cleanup(self) -> None:
         """清理 socket 资源。"""
         with self._lock:
@@ -309,61 +267,6 @@ class TC3720TcpAdapter:
                 except Exception:
                     pass
                 self._socket = None
-
-    def start_test(
-        self, group: str, bitmask: str, timeout: float = 30.0
-    ) -> bool:
-        """向 3720 发送启动测试指令。
-
-        DEPRECATED: 请使用 trigger_test() 替代。当前协议使用简化格式。
-
-        Args:
-            group: 组号。
-            bitmask: DUT 位掩码（需要测试哪些 DUT）。
-            timeout: 测试超时时间（秒）。
-
-        Returns:
-            启动是否成功（不表示测试是否成功）。
-        """
-        with self._lock:
-            if not self._running:
-                logger.error("3720 未连接，无法启动测试")
-                return False
-
-            if self._status == TC3720Status.TESTING:
-                logger.warning("3720 正在测试中，忽略重复请求")
-                return False
-
-        # 构建测试指令（根据实际 3720 协议修改）
-        # 这里需要根据实际的 3720 通信协议来构建指令
-        # 常见格式: START_TEST <group> <bitmask>\r\n
-        command = f"START_TEST {group} {bitmask}\r\n"
-
-        logger.info("向 3720 发送测试指令: %r", command)
-
-        # 保存待处理测试信息
-        with self._lock:
-            self._pending_test = True
-
-        # 发送指令
-        if not self._send_command(command):
-            with self._lock:
-                self._pending_test = False
-            logger.error("发送测试指令失败")
-            return False
-
-        # 更新状态
-        self._set_status(TC3720Status.TESTING)
-
-        # 启动超时监控
-        threading.Thread(
-            target=self._timeout_monitor,
-            args=(timeout,),
-            name="TC3720-Timeout",
-            daemon=True,
-        ).start()
-
-        return True
 
     def trigger_test(self, timeout: float = 30.0) -> bool:
         """向 3720 发送启动信号（协议规定的 "START" 命令）。
@@ -470,22 +373,6 @@ class TC3720TcpAdapter:
 
             time.sleep(0.1)
 
-    def abort_test(self) -> bool:
-        """中止当前测试。
-
-        Returns:
-            中止是否成功。
-        """
-        with self._lock:
-            self._pending_test = False
-
-        # 发送中止指令（根据实际协议修改）
-        self._send_command("ABORT\r\n")
-
-        self._set_status(TC3720Status.IDLE)
-        logger.info("已中止 3720 测试")
-        return True
-
     def _run_receive_loop(self) -> None:
         """接收数据主循环（在独立线程中运行）。"""
         logger.info("3720 接收线程启动")
@@ -502,11 +389,6 @@ class TC3720TcpAdapter:
                 # 解码数据
                 message = data.decode("utf-8", errors="replace")
                 logger.info("收到 3720 数据 [%d 字节]: %r", len(message), message)
-
-                # 触发透传回调（透传模式）
-                on_data_received = self._on_data_received
-                if on_data_received:
-                    on_data_received(message)
 
                 # 协议模式：处理接收到的数据
                 with self._lock:

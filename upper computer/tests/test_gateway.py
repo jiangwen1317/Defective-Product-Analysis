@@ -35,7 +35,6 @@ class TestGatewayConfig:
         assert config.arm_host == "0.0.0.0"
         assert config.arm_port == 8080
         assert config.test_timeout == 30.0
-        assert config.enable_debug is False
 
     def test_custom_config(self):
         """测试自定义配置。"""
@@ -44,14 +43,12 @@ class TestGatewayConfig:
             arm_serial_port="COM3",
             arm_serial_baudrate=57600,
             test_timeout=60.0,
-            enable_debug=True,
         )
 
         assert config.arm_mode == "serial"
         assert config.arm_serial_port == "COM3"
         assert config.arm_serial_baudrate == 57600
         assert config.test_timeout == 60.0
-        assert config.enable_debug is True
 
 
 class TestTransferRecord:

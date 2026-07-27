@@ -150,9 +150,6 @@ class _FakeArmAdapter(BaseArmAdapter):
         self._connected = True
         self._running = True
 
-    def _is_physical_connected(self) -> bool:
-        return True
-
     def _do_connect(self) -> bool:
         return True
 
@@ -170,7 +167,7 @@ class _FakeArmAdapter(BaseArmAdapter):
 
 
 class TestBaseAdapterBufferLeak:
-    """修复4：基类接收循环不再累积无消费的缓冲区。"""
+    """修复4：基类接收循环不做任何缓冲累积。"""
 
     def test_receive_loop_does_not_grow_buffer(self):
         chunks = [b"@START_TEST 00 10000000+"] * 10
@@ -180,9 +177,9 @@ class TestBaseAdapterBufferLeak:
 
         adapter._receive_loop()
 
-        # 数据全部通过回调交给上层，基类缓冲区保持为空
+        # 数据全部通过回调交给上层，基类不再持有任何缓冲区属性
         assert len(received) == 10
-        assert adapter._buffer == ""
+        assert not hasattr(adapter, "_buffer")
 
 
 class TestDeviceManagerLocking:

@@ -79,7 +79,6 @@ class GatewayConfig:
     arm_serial_parity: str = "N"
     # 测试配置
     test_timeout: float = 30.0
-    enable_debug: bool = False
     # 多设备配置：DUT#1-8 → IP 映射
     devices_config: dict[str, dict] | None = None
 
@@ -105,40 +104,34 @@ class PassthroughGateway:
         config: GatewayConfig | None = None,
         on_state_changed: Callable[[GatewayState], None] | None = None,
         on_arm_connected: Callable[[bool], None] | None = None,
-        on_3720_status_changed: Callable[[TC3720Status], None] | None = None,
-        on_dut_status_changed: Callable[[int, TC3720Status], None] | None = None,  # 新增：每个 DUT 的状态
+        on_dut_status_changed: Callable[[int, TC3720Status], None] | None = None,  # 单个 DUT 的状态
         on_test_started: Callable[[str, str, list[int]], None] | None = None,  # group, bitmask, dut_indices
         on_dut_result: Callable[[int, str], None] | None = None,  # dut_index, error_code
         on_test_finished: Callable[[str, dict[int, str], float], None] | None = None,  # group, results, duration
         on_record: Callable[[TransferRecord], None] | None = None,
-        on_raw_data: Callable[[str, str], None] | None = None,  # direction, data
         on_error: Callable[[ErrorCode, str], None] | None = None,
     ) -> None:
-        """初始化透明中转网关。
+        """初始化协议处理网关。
 
         Args:
             config: 网关配置。
             on_state_changed: 状态变化回调。
             on_arm_connected: 机械臂连接状态变化回调。
-            on_3720_status_changed: 3720 聚合状态变化回调。
             on_dut_status_changed: 单个 DUT 状态变化回调 (dut_index, status)。
             on_test_started: 测试会话开始回调 (group, bitmask, dut_indices)。
             on_dut_result: 会话内单个 DUT 结果回调 (dut_index, error_code)。
             on_test_finished: 测试会话结束回调 (group, {dut_index: error_code}, 耗时秒)。
             on_record: 中转记录回调。
-            on_raw_data: 原始数据回调（direction: "arm_to_3720" 或 "3720_to_arm"）。
             on_error: 错误发生回调。
         """
         self._config = config or GatewayConfig()
         self._on_state_changed = on_state_changed
         self._on_arm_connected = on_arm_connected
-        self._on_3720_status_changed = on_3720_status_changed
         self._on_dut_status_changed = on_dut_status_changed
         self._on_test_started = on_test_started
         self._on_dut_result = on_dut_result
         self._on_test_finished = on_test_finished
         self._on_record = on_record
-        self._on_raw_data = on_raw_data
         self._on_error = on_error
 
         # 适配器
@@ -264,8 +257,6 @@ class PassthroughGateway:
                 record = self._create_record("arm_to_3720", trigger_cmd)
                 if self._on_record:
                     self._on_record(record)
-                if self._on_raw_data:
-                    self._on_raw_data("arm_to_3720", trigger_cmd)
 
                 return True
             else:
@@ -305,7 +296,7 @@ class PassthroughGateway:
             logger.warning("网关已在运行")
             return True
 
-        logger.info("启动透明中转网关...")
+        logger.info("启动网关服务...")
         self._running = True
 
         try:
@@ -325,7 +316,7 @@ class PassthroughGateway:
                     parity=self._config.arm_serial_parity,
                     on_connected=self._on_arm_connected_callback,
                     on_disconnected=self._on_arm_disconnected_callback,
-                    on_data_received=self._on_arm_data_received,  # 透传模式：直接接收数据
+                    on_data_received=self._on_arm_data_received,  # 数据交由网关分帧与协议解析
                     on_error=self._on_arm_error,
                 )
             else:
@@ -342,7 +333,7 @@ class PassthroughGateway:
                     reconnect_interval=self._config.arm_reconnect_interval,
                     on_connected=self._on_arm_connected_callback,
                     on_disconnected=self._on_arm_disconnected_callback,
-                    on_data_received=self._on_arm_data_received,  # 透传模式
+                    on_data_received=self._on_arm_data_received,  # 数据交由网关分帧与协议解析
                     on_error=self._on_arm_error,
                 )
         except Exception as e:
@@ -388,7 +379,7 @@ class PassthroughGateway:
             return False
 
         self._set_state(GatewayState.IDLE)
-        logger.info("透明中转网关已启动，数据将透传到 3720...")
+        logger.info("网关已启动，等待机械臂指令...")
         return True
 
     def stop(self) -> None:
@@ -396,7 +387,7 @@ class PassthroughGateway:
         if not self._running:
             return
 
-        logger.info("停止透明中转网关...")
+        logger.info("停止网关服务...")
         self._running = False
 
         # 唤醒可能正在等待测试结果的工作线程，使其尽快退出
@@ -407,7 +398,7 @@ class PassthroughGateway:
 
         self._set_state(GatewayState.IDLE)
         self._cleanup()
-        logger.info("透明中转网关已停止")
+        logger.info("网关服务已停止")
 
     def _cleanup(self) -> None:
         """清理资源。"""
@@ -491,8 +482,6 @@ class PassthroughGateway:
         record = self._create_record("arm_to_3720", data)
         if self._on_record:
             self._on_record(record)
-        if self._on_raw_data:
-            self._on_raw_data("arm_to_3720", data)
 
         # 使用缓冲区处理分片数据
         self._arm_buffer += data
@@ -735,18 +724,6 @@ class PassthroughGateway:
         if self._on_dut_status_changed:
             self._on_dut_status_changed(dut_index, status)
 
-        # 调用聚合状态回调
-        if self._on_3720_status_changed:
-            # 聚合状态：只要有设备在测试就返回 TESTING
-            if status == TC3720Status.TESTING:
-                self._on_3720_status_changed(TC3720Status.TESTING)
-            elif status == TC3720Status.IDLE:
-                # 只有当没有设备在测试时才返回 IDLE
-                if self._device_manager and self._device_manager.is_all_idle():
-                    self._on_3720_status_changed(TC3720Status.IDLE)
-            else:
-                self._on_3720_status_changed(status)
-
     def _send_test_done_to_arm(self, group: str, error_codes: list[str]) -> None:
         """发送 TEST_DONE 响应给机械臂。
 
@@ -775,8 +752,6 @@ class PassthroughGateway:
         record = self._create_record("3720_to_arm", response)
         if self._on_record:
             self._on_record(record)
-        if self._on_raw_data:
-            self._on_raw_data("3720_to_arm", response)
 
     def _send_error_to_arm(self, error_msg: str) -> None:
         """发送错误信息给机械臂。
