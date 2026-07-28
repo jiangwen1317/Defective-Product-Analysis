@@ -1,21 +1,22 @@
 {
     "gateway": {
         "arm_mode": "serial",
-        "arm_host": "0.0.0.0",
-        "arm_port": 8080,
-        "arm_target_host": "",
-        "arm_target_port": 0,
-        "arm_reconnect_interval": 5.0,
         "arm_serial_port": "COM3",
         "arm_serial_baudrate": 115200,
         "arm_serial_bytesize": 8,
         "arm_serial_stopbits": 1,
         "arm_serial_parity": "N",
-        "tc3720_mode": "simulator",
-        "tc3720_host": "192.168.1.101",
-        "tc3720_port": 9090,
-        "test_timeout": 30.0,
-        "enable_debug": true
+        "test_timeout": 30.0
+    },
+    "devices": {
+        "dut1": {"ip": "192.168.1.101", "port": 9090, "name": "Board-1"},
+        "dut2": {"ip": "192.168.1.102", "port": 9090, "name": "Board-2"},
+        "dut3": {"ip": "", "port": 9090},
+        "dut4": {"ip": "", "port": 9090},
+        "dut5": {"ip": "", "port": 9090},
+        "dut6": {"ip": "", "port": 9090},
+        "dut7": {"ip": "", "port": 9090},
+        "dut8": {"ip": "", "port": 9090}
     },
     "ui": {
         "window_width": 1400,

@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import warnings
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # 抑制 libpng 警告（Pillow/PyQt5 加载 PNG 时的元数据警告）
@@ -30,14 +31,14 @@ from ui.main_window import main
 def setup_logging() -> None:
     """配置日志系统，支持控制台和文件双输出。
 
-    日志文件以追加模式写入 logs/gateway.log，暂未做自动轮转，
-    长期运行需定期手动清理。
+    日志文件写入 logs/gateway.log，按大小自动轮转
+    （单文件上限 10MB，保留 5 个历史文件），支持 7×24 长期运行。
     """
     # 确保日志目录存在
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
 
-    # 日志文件路径（按日期）
+    # 日志文件路径
     log_file = log_dir / "gateway.log"
 
     # 获取根 logger
@@ -60,10 +61,11 @@ def setup_logging() -> None:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    # 文件处理器（追加模式，UTF-8 编码）
-    file_handler = logging.FileHandler(
+    # 文件处理器（按大小轮转，UTF-8 编码）
+    file_handler = RotatingFileHandler(
         log_file,
-        mode="a",
+        maxBytes=10 * 1024 * 1024,  # 单文件上限 10MB
+        backupCount=5,              # 保留 gateway.log.1 ~ .5
         encoding="utf-8",
     )
     # 与根 logger 保持一致：根 logger 为 INFO 级，更低级别的消息到不了 handler

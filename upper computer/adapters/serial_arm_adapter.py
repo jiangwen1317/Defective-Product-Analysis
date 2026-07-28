@@ -158,7 +158,14 @@ class SerialArmAdapter(BaseArmAdapter):
                 self._serial = None
 
     def _read_available(self) -> bytes | None:
-        """读取可用数据。"""
+        """读取可用数据。
+
+        Returns:
+            读取的字节数据，无数据时返回 None。
+
+        Raises:
+            ConnectionError: 串口失效（如 USB 设备拔出）时。
+        """
         if not self._serial or not self._serial.is_open:
             return None
 
@@ -166,8 +173,10 @@ class SerialArmAdapter(BaseArmAdapter):
             if self._serial.in_waiting > 0:
                 return self._serial.read(self._serial.in_waiting)
             return None
-        except serial.SerialException:
-            return None
+        except serial.SerialException as e:
+            # USB 拔出等串口失效：必须抛出让接收循环走断开流程，
+            # 否则返回 None 会导致断线永远检测不到，UI 持续显示在线
+            raise ConnectionError(f"串口异常: {e}") from e
 
     def _write_data(self, data: str) -> bool:
         """发送数据。"""

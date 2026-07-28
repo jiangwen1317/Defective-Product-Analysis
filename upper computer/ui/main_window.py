@@ -638,7 +638,8 @@ class MainWindow(QMainWindow):
         self._stats_panel = StatsPanel()
         stats_layout.addWidget(self._stats_panel)
 
-        layout.addWidget(stats_card, 1)  # 弹性扩展，填满剩余空间
+        layout.addWidget(stats_card)
+        layout.addStretch(1)  # 剩余空间留白，避免统计卡片被纵向拉伸成空柱
 
         return panel
 

@@ -234,7 +234,14 @@ class ArmAdapter(BaseArmAdapter):
                 self._server_socket = None
 
     def _read_available(self) -> bytes | None:
-        """读取可用数据。"""
+        """读取可用数据。
+
+        Returns:
+            读取的字节数据，超时无数据时返回 None。
+
+        Raises:
+            ConnectionError: 对端关闭连接或链路异常（如 ECONNRESET）时。
+        """
         if not self._client_socket:
             return None
 
@@ -244,14 +251,19 @@ class ArmAdapter(BaseArmAdapter):
                 return None
 
             data = self._client_socket.recv(self.BUFFER_SIZE)
-            if not data:
-                return None
-            return data
 
         except socket.timeout:
             return None
-        except Exception:
-            return None
+        except OSError as e:
+            # ECONNRESET 等链路异常同样视为断开，不得吞掉，
+            # 否则断线永远检测不到且 select 对失效 socket 形成忙旋转
+            raise ConnectionError(f"连接异常: {e}") from e
+
+        if not data:
+            # recv 返回空字节是对端正常关闭的唯一信号，
+            # 必须与“超时无数据”（返回 None）严格区分
+            raise ConnectionError("对端已关闭连接")
+        return data
 
     def _write_data(self, data: str) -> bool:
         """发送数据。"""
@@ -330,6 +342,9 @@ class ArmAdapter(BaseArmAdapter):
                 if self._on_data_received:
                     self._on_data_received(message)
 
+        except ConnectionError as e:
+            # 机械臂断开：正常事件，回到 accept 循环等待新连接
+            logger.info("机械臂连接已断开: %s", e)
         except Exception as e:
             logger.error("连接处理异常: %s", e)
             if self._on_error:
@@ -337,3 +352,19 @@ class ArmAdapter(BaseArmAdapter):
 
         finally:
             self._on_disconnected_internal()
+
+    def _on_disconnected_internal(self) -> None:
+        """内部断开连接处理（仅 Client 模式自动重连）。
+
+        Server 模式下断开后由 accept 循环继续等待新连接；
+        若走基类重连逻辑，_do_connect 恒返回 False，重连线程只会静默空转。
+        """
+        with self._lock:
+            self._connected = False
+
+        logger.info("机械臂已断开连接")
+        if self._on_disconnected:
+            self._on_disconnected(self)
+
+        if self._running and self._mode == ArmAdapterMode.CLIENT:
+            self._start_reconnect()

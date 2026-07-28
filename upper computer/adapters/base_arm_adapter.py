@@ -85,7 +85,10 @@ class BaseArmAdapter(ABC):
         """读取可用数据（子类实现）。
 
         Returns:
-            读取的字节数据，无数据时返回 None。
+            读取的字节数据，超时无数据时返回 None。
+
+        Raises:
+            ConnectionError: 连接已断开（对端关闭或链路失效）时。
         """
         ...
 
@@ -217,6 +220,10 @@ class BaseArmAdapter(ABC):
                 if self._on_data_received:
                     self._on_data_received(message)
 
+            except ConnectionError as e:
+                # 对端关闭或链路失效：正常断开事件，走断开流程而非错误上报
+                logger.info("连接已断开: %s", e)
+                break
             except Exception as e:
                 logger.error("接收数据异常: %s", e)
                 if self._on_error:
