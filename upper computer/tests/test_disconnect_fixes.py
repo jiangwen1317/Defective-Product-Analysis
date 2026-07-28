@@ -14,7 +14,6 @@
 
 import json
 import socket
-import sys
 import time
 from pathlib import Path
 from unittest.mock import Mock, PropertyMock, patch
@@ -22,10 +21,8 @@ from unittest.mock import Mock, PropertyMock, patch
 import pytest
 import serial
 
-# 将项目根目录添加到模块搜索路径
+# 项目根目录（sys.path 注入已统一由 tests/conftest.py 处理）
 _project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 
 from adapters.arm_adapter import ArmAdapter
 from adapters.base_arm_adapter import BaseArmAdapter

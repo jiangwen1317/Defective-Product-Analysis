@@ -11,7 +11,6 @@ P0 并发缺陷修复回归测试。
 7. UI 跨线程通信使用 pyqtSignal 而非 QTimer.singleShot
 """
 
-import sys
 import threading
 import time
 from pathlib import Path
@@ -19,10 +18,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-# 将项目根目录添加到模块搜索路径
+# 项目根目录（sys.path 注入已统一由 tests/conftest.py 处理）
 _project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 
 from adapters import TC3720Status
 from adapters.base_arm_adapter import BaseArmAdapter

@@ -27,7 +27,7 @@ upper computer/
 │   ├── base_arm_adapter.py      # 机械臂适配器基类
 │   ├── arm_adapter.py           # 机械臂 TCP 适配器
 │   ├── serial_arm_adapter.py    # 机械臂串口适配器
-│   ├── tc3720_adapter.py        # 3720 测试仪模拟器
+│   ├── tc3720_adapter.py        # 3720 状态枚举（TC3720Status）
 │   └── tc3720_tcp_adapter.py    # 3720 测试仪 TCP 适配器
 │
 ├── router/                      # 路由层
@@ -41,9 +41,14 @@ upper computer/
 │
 ├── tests/                       # 测试
 │   ├── test_arm_protocol.py     # 协议测试
+│   ├── test_base_arm_adapter.py # 适配器测试
 │   ├── test_device_manager.py   # 设备管理测试
 │   ├── test_gateway.py          # 网关测试
-│   └── test_thread_safety.py    # 线程安全测试
+│   ├── test_thread_safety.py    # 线程安全测试
+│   ├── test_p0_concurrency_fixes.py  # P0 并发缺陷回归
+│   ├── test_p1_fixes.py         # P1 缺陷回归
+│   ├── test_p1_stage3_fixes.py  # 阶段三 P1 缺陷回归
+│   └── test_disconnect_fixes.py # 断线检测与配置模板回归
 │
 └── docs/
     └── 机械臂测试通信协议规范.md  # 通信协议文档
@@ -114,23 +119,23 @@ upper computer/
 
 ## 配置说明
 
-配置文件：`config.json`
+配置文件：`config.json`（可从 `config_serial_example.json` 串口模板或
+`config_full.json` 全量模板复制后修改，缺失字段使用代码内置默认值）
 
 ```json
 {
     "gateway": {
-        "arm_mode": "tcp_server",      // 通信模式: tcp_server | tcp_client | serial
+        "arm_mode": "serial",          // 通信模式: tcp_server | tcp_client | serial（必填）
         "arm_host": "0.0.0.0",         // TCP Server 监听地址
         "arm_port": 8080,              // TCP Server 监听端口
         "arm_target_host": "",         // TCP Client 目标地址
         "arm_target_port": 0,          // TCP Client 目标端口
         "arm_reconnect_interval": 5.0, // 重连间隔（秒）
-        "arm_serial_port": "COM3",     // 串口名称
-        "arm_serial_baudrate": 115200, // 波特率
-        "test_timeout": 30.0,          // 测试超时时间（秒）
-        "enable_debug": true           // 调试模式
+        "arm_serial_port": "COM3",     // 串口名称（串口模式必填）
+        "arm_serial_baudrate": 115200, // 波特率（串口模式必填）
+        "test_timeout": 30.0           // 测试超时时间（秒）
     },
-    "devices": {                      // 多 DUT 配置
+    "devices": {                      // 多 DUT 配置（IP 为空的 DUT 会被跳过）
         "dut1": {"ip": "192.168.1.101", "port": 9090, "name": "Board-1"},
         "dut2": {"ip": "192.168.1.102", "port": 9090, "name": "Board-2"}
     },

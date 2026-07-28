@@ -23,7 +23,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
     QApplication,
@@ -130,6 +130,12 @@ class MainWindow(QMainWindow):
         self._sig_dut_result.connect(self._update_dut_result_safe)
         self._sig_test_finished.connect(self._update_test_finished_safe)
         self._sig_service_done.connect(self._on_service_done_safe)
+
+        # 触发按钮加载态的兜底恢复定时器（主线程）：
+        # 机械臂始终不响应 @TEST_DONE 时自动恢复按钮，避免永久禁用
+        self._trigger_reset_timer = QTimer(self)
+        self._trigger_reset_timer.setSingleShot(True)
+        self._trigger_reset_timer.timeout.connect(lambda: self._set_trigger_busy(False))
 
         # 窗口初始化
         self._init_ui()
@@ -830,6 +836,10 @@ class MainWindow(QMainWindow):
         # 重置显示
         self._arm_connection.set_status("offline")
 
+        # 恢复触发按钮（服务停止后会话不会再有结束回调）
+        self._trigger_reset_timer.stop()
+        self._set_trigger_busy(False)
+
         # 重置 DUT 网格
         if hasattr(self, '_dut_grid_panel'):
             self._dut_grid_panel.reset_all()
@@ -883,8 +893,21 @@ class MainWindow(QMainWindow):
         if success:
             boards_str = "、".join([f"板子{i}" for i in selected_boards])
             self._log("触发", f"已发送 @TEST_DONE 触发命令（测试 {boards_str}），等待机械臂响应...")
+            # 进入加载态，防止重复触发；会话结束或兜底超时后恢复
+            self._set_trigger_busy(True)
+            reset_ms = int((self._gateway_config.test_timeout * 2 + 5) * 1000)
+            self._trigger_reset_timer.start(reset_ms)
         else:
             self._log("错误", "发送触发命令失败")
+
+    def _set_trigger_busy(self, busy: bool) -> None:
+        """设置触发按钮的加载态（测试会话期间禁止重复触发）。
+
+        Args:
+            busy: True 进入加载态（禁用按钮），False 恢复可用。
+        """
+        self._trigger_btn.setEnabled(not busy)
+        self._trigger_btn.setText("⏳ 测试进行中..." if busy else "▶ 触发测试")
 
     @staticmethod
     def _map_selected_boards(configured_duts: list[int], checked: list[bool]) -> list[int]:
@@ -1102,6 +1125,11 @@ class MainWindow(QMainWindow):
         try:
             self._test_progress_panel.start_test(dut_indices)
 
+            # 会话已开始（含机械臂主动发起）：按钮保持加载态，
+            # 结束时机交由 on_test_finished（网关保证超时也会触发）
+            self._trigger_reset_timer.stop()
+            self._set_trigger_busy(True)
+
             if self._task_group_label is not None:
                 self._task_group_label.setText(group)
                 self._task_bitmask_label.setText(bitmask)
@@ -1138,6 +1166,10 @@ class MainWindow(QMainWindow):
         """
         try:
             self._test_progress_panel.complete_test(results)
+
+            # 会话结束，恢复触发按钮
+            self._trigger_reset_timer.stop()
+            self._set_trigger_busy(False)
 
             if self._task_errorcodes_label is not None:
                 codes_text = " ".join(f"#{d}:{results[d]}" for d in sorted(results))
@@ -1189,7 +1221,17 @@ class MainWindow(QMainWindow):
             )
 
     def _on_clear_log(self) -> None:
-        """清空日志。"""
+        """清空日志（需确认，防止误触丢失现场记录）。"""
+        reply = QMessageBox.question(
+            self,
+            "清空日志",
+            "确定要清空通讯日志吗？此操作不可恢复。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
         self._log_text.clear()
         self._log_buffer.clear()
 

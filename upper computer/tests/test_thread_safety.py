@@ -2,17 +2,39 @@
 线程安全测试 - 验证 P0 修复是否正确。
 """
 
-import pytest
-import sys
 import threading
-import time
 from pathlib import Path
-from unittest.mock import Mock, patch
 
-# 将项目根目录添加到模块搜索路径
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+
+def _assert_single_reconnect_thread(adapter) -> None:
+    """并发调用 _start_reconnect，验证只创建一个重连线程。
+
+    用可控的假重连循环替换真实实现：既能统计线程创建次数，
+    又能保证线程在全部并发调用期间存活（不产生真实网络连接）。
+    """
+    started_threads: list[str] = []
+    release = threading.Event()
+
+    def fake_reconnect_loop() -> None:
+        started_threads.append(threading.current_thread().name)
+        release.wait(2.0)
+        with adapter._reconnect_lock:
+            adapter._reconnecting = False
+
+    adapter._reconnect_loop = fake_reconnect_loop
+
+    callers = [threading.Thread(target=adapter._start_reconnect) for _ in range(5)]
+    for t in callers:
+        t.start()
+    for t in callers:
+        t.join(timeout=2.0)
+
+    release.set()
+    if adapter._reconnect_thread:
+        adapter._reconnect_thread.join(timeout=2.0)
+
+    # 修复前此处以 assert True 收尾，未验证任何行为
+    assert len(started_threads) == 1, f"创建了 {len(started_threads)} 个重连线程"
 
 
 class TestTC3720AdapterThreadSafety:
@@ -25,23 +47,8 @@ class TestTC3720AdapterThreadSafety:
         adapter = TC3720TcpAdapter(host="192.168.1.99", port=9999)
         adapter._running = True
         adapter._stop_reconnect.clear()
-        adapter._reconnecting = False
-        adapter._reconnect_thread = None
 
-        # 模拟多个并发调用
-        threads = []
-        for _ in range(5):
-            t = threading.Thread(target=adapter._start_reconnect)
-            threads.append(t)
-            t.start()
-
-        for t in threads:
-            t.join(timeout=2.0)
-
-        # 应该只有一个线程被创建
-        # 由于连接失败，线程会退出，_reconnecting 会被重置
-        # 我们验证方法本身不会抛出异常
-        assert True
+        _assert_single_reconnect_thread(adapter)
 
     def test_reconnect_lock_is_thread_safe(self):
         """测试重连锁是线程安全的。"""
@@ -59,7 +66,7 @@ class TestArmAdapterThreadSafety:
 
     def test_start_reconnect_no_duplicate_threads(self):
         """测试 _start_reconnect 不会创建多个重连线程。"""
-        from adapters.arm_adapter import ArmAdapter, ArmAdapterMode
+        from adapters.arm_adapter import ArmAdapter
 
         adapter = ArmAdapter(
             host="0.0.0.0",
@@ -70,21 +77,8 @@ class TestArmAdapterThreadSafety:
         )
         adapter._running = True
         adapter._stop_reconnect.clear()
-        adapter._reconnecting = False
-        adapter._reconnect_thread = None
 
-        # 模拟多个并发调用
-        threads = []
-        for _ in range(5):
-            t = threading.Thread(target=adapter._start_reconnect)
-            threads.append(t)
-            t.start()
-
-        for t in threads:
-            t.join(timeout=2.0)
-
-        # 应该只有一个线程被创建
-        assert True
+        _assert_single_reconnect_thread(adapter)
 
     def test_reconnect_lock_is_thread_safe(self):
         """测试重连锁是线程安全的。"""

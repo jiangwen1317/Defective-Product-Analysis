@@ -81,7 +81,8 @@ Thumbs.db
 # Runtime configuration (may contain sensitive data)
 config.json
 
-# Log files
+# Log files (logs/ 目录整体忽略：轮转产物 gateway.log.1 等不匹配 *.log)
+logs/
 *.log
 
 # GUI screenshots (test artifacts)

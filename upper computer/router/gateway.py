@@ -431,13 +431,19 @@ class PassthroughGateway:
     def on_start_test(self, group: str, bitmask: str) -> None:
         """手动触发测试（供调试工具使用）。
 
-        模拟收到机械臂的 @START_TEST 指令，处理测试请求。
+        模拟收到机械臂的 @START_TEST 指令。与正常接收路径一致，
+        投递到测试会话工作线程串行处理：若直接同步调用，会与工作线程
+        并发共享 _test_results/_test_complete_event 导致会话结果交叉污染，
+        且调用线程会被阻塞最长 2×test_timeout。
 
         Args:
             group: 组号。
             bitmask: DUT 位掩码。
         """
-        self._handle_start_test({"group": group, "bitmask": bitmask})
+        if not self._running:
+            logger.warning("网关未运行，忽略手动触发的 START_TEST")
+            return
+        self._test_queue.put({"group": group, "bitmask": bitmask})
 
     def _test_worker_loop(self) -> None:
         """测试会话工作线程主循环。
