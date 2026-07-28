@@ -12,10 +12,12 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Callable
 
+from adapters.reconnect_mixin import ReconnectMixin
+
 logger = logging.getLogger(__name__)
 
 
-class BaseArmAdapter(ABC):
+class BaseArmAdapter(ReconnectMixin, ABC):
     """机械臂适配器基类。
 
     定义适配器必须实现的方法，提供公共功能：
@@ -51,11 +53,8 @@ class BaseArmAdapter(ABC):
         self._running = False
         self._connected = False
 
-        # 重连线程控制
-        self._reconnect_thread: threading.Thread | None = None
-        self._stop_reconnect = threading.Event()
-        self._reconnecting = False
-        self._reconnect_lock = threading.Lock()
+        # 重连线程控制（字段由 ReconnectMixin 统一初始化）
+        self._init_reconnect_state()
 
         # 读取线程控制
         self._lock = threading.Lock()
@@ -137,9 +136,7 @@ class BaseArmAdapter(ABC):
         self._stop_reconnect.set()
 
         # 等待重连线程结束
-        if self._reconnect_thread and self._reconnect_thread.is_alive():
-            self._reconnect_thread.join(timeout=1.0)
-            self._reconnect_thread = None
+        self._join_reconnect_thread(timeout=1.0)
 
         # 等待接收线程结束
         self._wait_for_receive_thread()
@@ -149,45 +146,10 @@ class BaseArmAdapter(ABC):
 
         logger.info("机械臂适配器已停止")
 
-    def _start_reconnect(self) -> None:
-        """启动重连（线程安全）。"""
-        with self._reconnect_lock:
-            if self._reconnecting:
-                logger.debug("重连线程已在运行，跳过")
-                return
-
-            if self._reconnect_thread and self._reconnect_thread.is_alive():
-                logger.debug("重连线程仍在运行，跳过")
-                return
-
-            self._reconnecting = True
-            self._stop_reconnect.clear()
-
-            self._reconnect_thread = threading.Thread(
-                target=self._reconnect_loop,
-                name=f"{self.__class__.__name__}-Reconnect",
-                daemon=True,
-            )
-            self._reconnect_thread.start()
-
-    def _reconnect_loop(self) -> None:
-        """重连循环。"""
-        try:
-            while self._running and not self._stop_reconnect.is_set():
-                if self._do_connect():
-                    logger.info("重连成功")
-                    self._start_receive_thread()
-                    return
-
-                # 等待重连间隔
-                for _ in range(int(self._reconnect_interval * 10)):
-                    if self._stop_reconnect.is_set() or not self._running:
-                        return
-                    threading.Event().wait(0.1)
-        finally:
-            with self._reconnect_lock:
-                self._reconnecting = False
-            logger.info("重连线程退出")
+    def _on_reconnect_success(self) -> None:
+        """重连成功：启动接收线程（ReconnectMixin 钩子）。"""
+        logger.info("重连成功")
+        self._start_receive_thread()
 
     def _start_receive_thread(self) -> None:
         """启动接收线程（子类可覆盖）。"""

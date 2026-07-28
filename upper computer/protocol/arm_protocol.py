@@ -25,8 +25,7 @@ class ArmProtocol:
     4. 上位机组装 @TEST_DONE 返回给机械臂
     """
 
-    # 指令标识
-    CMD_START: Final[str] = "@START_TEST"
+    # 指令标识（START_TEST 由机械臂发出，上位机仅解析不构建）
     CMD_DONE: Final[str] = "@TEST_DONE"
     CMD_TERMINATOR: Final[str] = "+"
 
@@ -35,42 +34,6 @@ class ArmProtocol:
 
     # 错误码格式：4位十六进制（大写 A-F）
     ERROR_CODE_PATTERN: Final[str] = r"^[0-9A-F]{4}$"
-
-    @classmethod
-    def build_start_test(cls, group: str, bitmask: str) -> str:
-        """构建 START_TEST 指令。
-
-        ⚠️ 警告：此方法仅在被动监听模式下使用。
-        主动触发模式下，上位机不发送此指令，而是由机械臂自动发送。
-
-        Args:
-            group: 组号，2位十六进制数（如 '00'）。
-            bitmask: 8位二进制字符串，从左至右对应 DUT #1 至 DUT #8。
-                    '1' 表示测试该 DUT，'0' 表示不测试。
-
-        Returns:
-            完整的指令字符串，格式为：@START_TEST <Group> <Bitmask>+
-
-        Raises:
-            ValueError: 参数格式不正确时抛出。
-
-        Example:
-            >>> ArmProtocol.build_start_test("00", "11111111")
-            '@START_TEST 00 11111111+'
-            >>> ArmProtocol.build_start_test("00", "10100000")
-            '@START_TEST 00 10100000+'
-        """
-        # 验证 group（当前协议版本固定为 '00'）
-        if not cls._validate_group(group):
-            raise ValueError(f"Group 必须是 '00'（当前协议版本固定），当前值: {group}")
-
-        # 验证 bitmask
-        if not cls._validate_bitmask(bitmask):
-            raise ValueError(
-                f"Bitmask 必须是8位二进制字符串（仅含0/1），当前值: {bitmask}"
-            )
-
-        return f"{cls.CMD_START} {group} {bitmask}{cls.CMD_TERMINATOR}"
 
     @classmethod
     def build_test_done(cls, group: str, error_codes: list[str]) -> str:
@@ -343,33 +306,3 @@ class ArmProtocol:
             error_codes.append("0001" if i in boards_to_test else "0000")
 
         return f"{cls.CMD_DONE} 00 {' '.join(error_codes)}{cls.CMD_TERMINATOR}"
-
-    @classmethod
-    def parse_error_code_response(cls, raw: str) -> str | None:
-        """解析 3720 返回的错误码响应。
-
-        3720 返回格式: ErrorCode: XXXX
-
-        Args:
-            raw: 原始响应字符串。
-
-        Returns:
-            4位十六进制错误码，解析失败返回 None。
-        """
-        if not raw:
-            return None
-
-        # 去除首尾空白
-        raw = raw.strip()
-
-        # 匹配 "ErrorCode: XXXX" 格式
-        match = re.match(r"^ErrorCode:\s*([0-9A-Fa-f]{4})$", raw, re.IGNORECASE)
-        if match:
-            return match.group(1).upper()
-
-        # 尝试直接匹配 4 位十六进制
-        if re.fullmatch(r"^[0-9A-Fa-f]{4}$", raw):
-            return raw.upper()
-
-        logger.warning("无法解析 3720 错误码响应: %r", raw)
-        return None

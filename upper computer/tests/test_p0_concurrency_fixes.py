@@ -190,7 +190,7 @@ class TestDeviceManagerLocking:
         fake_adapter = Mock()
         fake_adapter.is_testing = False
         # 模拟 disconnect 触发状态回调，回调中反查管理器状态（需要管理器锁）
-        fake_adapter.disconnect.side_effect = lambda: manager.is_all_idle()
+        fake_adapter.disconnect.side_effect = lambda: manager.get_all_adapters()
         manager._adapters[1] = fake_adapter
 
         t = threading.Thread(target=manager.stop)

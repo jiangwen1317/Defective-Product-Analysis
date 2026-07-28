@@ -85,9 +85,6 @@ class DeviceManager:
         # 运行时状态
         self._running = False
 
-        # 待处理测试请求的 DUT 编号集合
-        self._pending_tests: set[int] = set()
-
     def start(self) -> bool:
         """启动设备管理器，初始化所有设备连接。
 
@@ -122,7 +119,6 @@ class DeviceManager:
         with self._lock:
             adapters = dict(self._adapters)
             self._adapters.clear()
-            self._pending_tests.clear()
 
         for dut_index, adapter in adapters.items():
             try:
@@ -204,10 +200,6 @@ class DeviceManager:
         """
         logger.info("DUT#%d 测试完成: %s", dut_index, error_codes)
 
-        # 清除待处理测试
-        with self._lock:
-            self._pending_tests.discard(dut_index)
-
         # 取第一个错误码作为结果
         error_code = error_codes[0] if error_codes else "0000"
 
@@ -232,10 +224,6 @@ class DeviceManager:
             error_msg: 错误消息。
         """
         logger.error("DUT#%d 错误: %s", dut_index, error_msg)
-
-        # 清除待处理测试
-        with self._lock:
-            self._pending_tests.discard(dut_index)
 
         # 构建错误结果
         result = TestResult(
@@ -317,11 +305,7 @@ class DeviceManager:
                 results[dut_index] = False
                 continue
 
-            # 记录待处理测试
-            with self._lock:
-                self._pending_tests.add(dut_index)
-
-            # 发送 START 信号（使用 trigger_test 设置待处理状态）
+            # 发送 START 信号（trigger_test 内部设置待处理状态）
             success = adapter.trigger_test(timeout=self._test_timeout)
             results[dut_index] = success
 
@@ -329,8 +313,6 @@ class DeviceManager:
                 logger.info("已向 DUT#%d 发送启动信号", dut_index)
             else:
                 logger.error("向 DUT#%d 发送启动信号失败", dut_index)
-                with self._lock:
-                    self._pending_tests.discard(dut_index)
 
         return results
 
@@ -347,19 +329,3 @@ class DeviceManager:
         if adapter:
             return adapter.status
         return TC3720Status.OFFLINE
-
-    def is_all_idle(self) -> bool:
-        """检查是否所有设备都处于空闲状态。
-
-        Returns:
-            是否所有设备都空闲。
-        """
-        with self._lock:
-            if self._pending_tests:
-                return False
-
-            for adapter in self._adapters.values():
-                if adapter.is_testing:
-                    return False
-
-        return True

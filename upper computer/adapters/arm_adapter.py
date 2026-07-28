@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Callable
 
 from adapters.base_arm_adapter import BaseArmAdapter
+from adapters.reconnect_mixin import close_socket
 
 logger = logging.getLogger(__name__)
 
@@ -191,41 +192,28 @@ class ArmAdapter(BaseArmAdapter):
             # Server 模式不主动连接
             return False
 
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self.CONNECT_TIMEOUT)
-            sock.connect((self._target_host, self._target_port))
-            sock.settimeout(self.SOCKET_TIMEOUT)
-
-            with self._lock:
-                self._client_socket = sock
-                self._connected = True
-
-            logger.info("已连接到目标: %s:%d", self._target_host, self._target_port)
-            self._on_connected_internal()
-            return True
-
-        except (OSError, socket.timeout) as e:
-            logger.warning("连接目标失败: %s:%d - %s", self._target_host, self._target_port, e)
+        sock = self._open_tcp_socket(self._target_host, self._target_port)
+        if sock is None:
             return False
+
+        with self._lock:
+            self._client_socket = sock
+            self._connected = True
+
+        logger.info("已连接到目标: %s:%d", self._target_host, self._target_port)
+        self._on_connected_internal()
+        return True
 
     def _do_disconnect(self) -> None:
         """执行实际断开连接操作。"""
         with self._lock:
             # 关闭客户端连接
             if self._client_socket:
-                try:
-                    self._client_socket.shutdown(socket.SHUT_RDWR)
-                except Exception:
-                    pass
-                try:
-                    self._client_socket.close()
-                except Exception:
-                    pass
+                close_socket(self._client_socket)
                 self._client_socket = None
                 self._connected = False
 
-            # 关闭服务器
+            # 关闭服务器监听 socket（仅需 close）
             if self._server_socket:
                 try:
                     self._server_socket.close()
@@ -308,14 +296,7 @@ class ArmAdapter(BaseArmAdapter):
         # 关闭旧连接
         with self._lock:
             if self._client_socket:
-                try:
-                    self._client_socket.shutdown(socket.SHUT_RDWR)
-                except Exception:
-                    pass
-                try:
-                    self._client_socket.close()
-                except Exception:
-                    pass
+                close_socket(self._client_socket)
 
             self._client_socket = client_socket
             self._connected = True

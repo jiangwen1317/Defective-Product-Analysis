@@ -174,10 +174,6 @@ class TestDeviceManagerStatus:
         result = self.manager.get_status(1)
         assert result == TC3720Status.OFFLINE
 
-    def test_is_all_idle_true(self):
-        """测试全部空闲（无设备）。"""
-        assert self.manager.is_all_idle() is True
-
 
 class TestTestResult:
     """TestResult 数据类测试。"""

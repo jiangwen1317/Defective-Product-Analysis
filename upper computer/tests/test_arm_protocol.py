@@ -70,30 +70,6 @@ class TestArmProtocolDutsToBitmask:
             ArmProtocol.duts_to_bitmask([1, 10])
 
 
-class TestArmProtocolBuildStartTest:
-    """构建 START_TEST 指令测试。"""
-
-    def test_build_start_test_valid(self):
-        """测试有效输入。"""
-        result = ArmProtocol.build_start_test("00", "11111111")
-        assert result == "@START_TEST 00 11111111+"
-
-    def test_build_start_test_partial(self):
-        """测试部分 DUT。"""
-        result = ArmProtocol.build_start_test("00", "11000000")
-        assert result == "@START_TEST 00 11000000+"
-
-    def test_build_start_test_invalid_group(self):
-        """测试无效组号。"""
-        with pytest.raises(ValueError, match="Group 必须是 '00'"):
-            ArmProtocol.build_start_test("01", "11111111")
-
-    def test_build_start_test_invalid_bitmask(self):
-        """测试无效 bitmask。"""
-        with pytest.raises(ValueError, match="Bitmask 必须是8位二进制字符串"):
-            ArmProtocol.build_start_test("00", "invalid")
-
-
 class TestArmProtocolBuildTestDone:
     """构建 TEST_DONE 指令测试。"""
 
@@ -225,28 +201,3 @@ class TestArmProtocolBuildTrigger:
         assert parts[4] == "0001"  # EC3
         assert parts[5] == "0000"  # EC4
         assert parts[6] == "0001"  # EC5
-
-
-class TestArmProtocolErrorCodeParsing:
-    """错误码解析测试。"""
-
-    def test_parse_error_code_response_valid(self):
-        """测试有效错误码响应。"""
-        result = ArmProtocol.parse_error_code_response("ErrorCode: 1901")
-        assert result == "1901"
-
-    def test_parse_error_code_response_lowercase(self):
-        """测试小写错误码。"""
-        result = ArmProtocol.parse_error_code_response("ErrorCode: abcd")
-        assert result == "ABCD"
-
-    def test_parse_error_code_response_standalone(self):
-        """测试独立错误码。"""
-        result = ArmProtocol.parse_error_code_response("1901")
-        assert result == "1901"
-
-    def test_parse_error_code_response_invalid(self):
-        """测试无效错误码。"""
-        assert ArmProtocol.parse_error_code_response("") is None
-        assert ArmProtocol.parse_error_code_response("invalid") is None
-        assert ArmProtocol.parse_error_code_response("ErrorCode: GG") is None
