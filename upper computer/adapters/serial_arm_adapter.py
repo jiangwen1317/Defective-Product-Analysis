@@ -114,6 +114,7 @@ class SerialArmAdapter(BaseArmAdapter):
         self._send_init_sequence()
 
         self._running = True
+        self._stop_reconnect.clear()
         self._start_receive_thread()
 
         logger.info("机械臂串口适配器已启动 [端口: %s, 波特率: %d]", self._port, self._baudrate)
@@ -121,6 +122,10 @@ class SerialArmAdapter(BaseArmAdapter):
 
     def _do_connect(self) -> bool:
         """执行实际连接操作。"""
+        # 先释放可能残留的旧句柄（重连场景），
+        # 否则 Windows 下 COM 口可能被旧句柄占用导致重连永远失败
+        self._close_serial()
+
         try:
             self._serial = serial.Serial(
                 port=self._port,
@@ -141,7 +146,8 @@ class SerialArmAdapter(BaseArmAdapter):
 
         except serial.SerialException as e:
             logger.error("打开串口失败: %s - %s", self._port, e)
-            if self._on_error:
+            # 重连循环中的失败只记日志，避免每个重连周期都向 UI 弹告警刷屏
+            if not self._reconnecting and self._on_error:
                 self._on_error(f"打开串口失败: {e}")
             return False
 
@@ -149,7 +155,11 @@ class SerialArmAdapter(BaseArmAdapter):
         """执行实际断开连接操作。"""
         with self._lock:
             self._connected = False
+        self._close_serial()
 
+    def _close_serial(self) -> None:
+        """关闭并清空串口句柄（已失效句柄的关闭异常可安全忽略）。"""
+        with self._lock:
             if self._serial:
                 try:
                     self._serial.close()
@@ -239,11 +249,11 @@ class SerialArmAdapter(BaseArmAdapter):
 
         logger.info("初始化序列发送完成，等待机械臂进入传输状态...")
 
-    def _on_disconnected_internal(self) -> None:
-        """内部断开连接处理（串口模式不自动重连）。"""
-        with self._lock:
-            self._connected = False
+    def _on_reconnect_success(self) -> None:
+        """重连成功：补发初始化序列后再启动接收线程。
 
-        logger.info("串口已断开连接")
-        if self._on_disconnected:
-            self._on_disconnected(self)
+        机械臂重新上电后需要重新进入传输状态，
+        与首次 start() 的初始化流程保持一致。
+        """
+        self._send_init_sequence()
+        super()._on_reconnect_success()

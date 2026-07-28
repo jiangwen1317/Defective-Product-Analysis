@@ -50,6 +50,7 @@ from ui.components import (
 )
 from config import get_configured_dut_indices, get_gateway_config, get_ui_config, load_config
 from router import ErrorCode, GatewayState, SignalGateway, TransferRecord
+from storage import HistoryStore
 from ui.styles import (
     COLOR_ACCENT,
     COLOR_ACCENT_HOVER,
@@ -109,8 +110,19 @@ class MainWindow(QMainWindow):
         # 统计数据（按测试会话统计：全部 0000 记成功，否则记失败）
         self._stats = {"total": 0, "success": 0, "failed": 0}
 
+        # 测试历史持久化（初始化失败时降级为仅内存统计，不阻止程序启动）
+        self._history_store: HistoryStore | None = None
+        try:
+            self._history_store = HistoryStore(_project_root / "data" / "test_history.db")
+            self._stats = self._history_store.load_stats()
+        except Exception as e:
+            logger.error("测试历史数据库初始化失败，统计将不持久化: %s", e)
+
         # 启停服务在后台线程执行，执行期间禁止重入
         self._service_busy = False
+
+        # 测试会话进行中标志（会话期间禁用触发按钮）
+        self._trigger_busy = False
 
         # 日志（使用 deque 自动限制长度）
         self._log_buffer: deque[str] = deque(maxlen=self._ui_config.get("log_max_lines", 5000))
@@ -140,6 +152,11 @@ class MainWindow(QMainWindow):
         # 窗口初始化
         self._init_ui()
         self._init_gateway()
+
+        # 显示从数据库恢复的历史统计（需在控件创建之后）
+        self._update_stats_display()
+        # 初始状态：服务未启动，触发按钮不可用
+        self._update_trigger_ready()
 
     def _init_ui(self) -> None:
         """初始化界面布局。"""
@@ -735,15 +752,9 @@ class MainWindow(QMainWindow):
             }}
         """)
 
-        # 更新标题栏状态
-        self._header_status_label.setText("● 服务运行中")
-        self._header_status_label.setStyleSheet("""
-            color: #22c55e;
-            font-size: 12px;
-            padding: 5px 14px;
-            background-color: #21262d;
-            border-radius: 14px;
-        """)
+        # 更新标题栏状态与触发按钮可用性
+        self._update_header_status()
+        self._update_trigger_ready()
 
         # 更新网关状态标签
         if hasattr(self, '_gw_status_label'):
@@ -824,14 +835,7 @@ class MainWindow(QMainWindow):
         """)
 
         # 更新标题栏状态
-        self._header_status_label.setText("● 服务未启动")
-        self._header_status_label.setStyleSheet("""
-            color: #6e7681;
-            font-size: 12px;
-            padding: 5px 14px;
-            background-color: #21262d;
-            border-radius: 14px;
-        """)
+        self._update_header_status()
 
         # 重置显示
         self._arm_connection.set_status("offline")
@@ -906,8 +910,50 @@ class MainWindow(QMainWindow):
         Args:
             busy: True 进入加载态（禁用按钮），False 恢复可用。
         """
-        self._trigger_btn.setEnabled(not busy)
-        self._trigger_btn.setText("⏳ 测试进行中..." if busy else "▶ 触发测试")
+        self._trigger_busy = busy
+        self._update_trigger_ready()
+
+    def _update_trigger_ready(self) -> None:
+        """根据服务/机械臂/会话状态刷新触发按钮可用性。
+
+        未就绪时直接禁用按钮（而非点击后报错），并用 tooltip 说明原因。
+        """
+        service_ready = self._gateway is not None and self._gateway.is_running
+        arm_ready = service_ready and self._gateway.is_arm_connected
+
+        if self._trigger_busy:
+            self._trigger_btn.setEnabled(False)
+            self._trigger_btn.setText("⏳ 测试进行中...")
+            self._trigger_btn.setToolTip("")
+            return
+
+        self._trigger_btn.setText("▶ 触发测试")
+        self._trigger_btn.setEnabled(arm_ready)
+        if not service_ready:
+            self._trigger_btn.setToolTip("请先启动服务")
+        elif not arm_ready:
+            self._trigger_btn.setToolTip("机械臂未连接，无法触发测试")
+        else:
+            self._trigger_btn.setToolTip("")
+
+    def _update_header_status(self) -> None:
+        """刷新标题栏服务状态胶囊（绿=就绪，橙=机械臂未连接，灰=未启动）。"""
+        running = self._gateway is not None and self._gateway.is_running
+        if not running:
+            text, color = "● 服务未启动", "#6e7681"
+        elif not self._gateway.is_arm_connected:
+            text, color = "● 运行中 · 机械臂未连接", "#f59e0b"
+        else:
+            text, color = "● 服务运行中", "#22c55e"
+
+        self._header_status_label.setText(text)
+        self._header_status_label.setStyleSheet(f"""
+            color: {color};
+            font-size: 12px;
+            padding: 5px 14px;
+            background-color: #21262d;
+            border-radius: 14px;
+        """)
 
     @staticmethod
     def _map_selected_boards(configured_duts: list[int], checked: list[bool]) -> list[int]:
@@ -988,6 +1034,10 @@ class MainWindow(QMainWindow):
             else:
                 self._arm_connection.set_status("offline")
                 self._log("连接", "机械臂已断开")
+
+            # 连接状态变化同步刷新标题栏胶囊与触发按钮可用性
+            self._update_header_status()
+            self._update_trigger_ready()
         except Exception as e:
             logger.exception("更新机械臂显示失败: %s", e)
 
@@ -1183,6 +1233,14 @@ class MainWindow(QMainWindow):
             else:
                 self._stats["failed"] += 1
             self._update_stats_display()
+
+            # 持久化会话记录（写库失败只记日志，不打断 UI 流程）
+            if self._history_store is not None:
+                try:
+                    self._history_store.save_record(group, results, duration)
+                except Exception as e:
+                    logger.error("保存测试历史记录失败: %s", e)
+                    self._log("错误", f"测试记录保存失败: {e}")
 
             passed = sum(1 for code in results.values() if code == "0000")
             self._log("完成", f"测试会话结束 - {passed}/{len(results)} 通过，耗时 {duration:.1f}s")
