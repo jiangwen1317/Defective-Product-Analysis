@@ -51,6 +51,9 @@ IDENTITY.md
 # Claude Code 个人配置
 .claude/settings.json
 
+# 代理审查会话产物（每次会话自动生成，不入库）
+.qoder/better-harness/
+
 # 数据分析 - Excel 报告（不提交）
 database-analysis/rma_report.xlsx
 database-analysis/*.xlsx
