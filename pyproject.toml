@@ -1,0 +1,35 @@
+# 仓库根级静态检查配置（三个子项目共享）
+# 机械化 AGENTS.md / youhua.md 中可自动检查的规则子集：
+#   - 公开函数必须有类型注解（AGENTS.md 二、三）
+#   - 每个函数不超过 50 行（AGENTS.md 二；以语句数 50 为机械代理指标）
+#   - 禁用 Any（AGENTS.md 三）
+# 运行方式（仓库根）：.venv\Scripts\python.exe -m ruff check .
+
+[tool.ruff]
+target-version = "py310"
+extend-exclude = [".venv", ".qoder", ".idea"]
+
+[tool.ruff.lint]
+select = [
+    "ANN001",  # 函数参数缺少类型注解
+    "ANN201",  # 公开函数缺少返回值类型注解
+    "ANN401",  # 禁用 typing.Any
+    "PLR0915", # 函数语句数超限（函数长度上限的机械代理）
+]
+
+[tool.ruff.lint.pylint]
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+# 测试代码不受"公开函数必须有类型注解"约束（规范针对公开 API）
+"**/tests/**" = ["ANN"]
+"**/conftest.py" = ["ANN"]
+
+# ---- 存量基线豁免（2026-07-29 引入检查时已存在的 29 处违规，随重构逐步收紧删除）----
+"Log-Download/log_downloader.py" = ["ANN001", "ANN201", "PLR0915"]
+"database-analysis/database.py" = ["ANN201"]
+"database-analysis/gui_app.py" = ["ANN001", "PLR0915"]
+"database-analysis/log_parser.py" = ["PLR0915"]
+"upper computer/router/gateway.py" = ["ANN001", "PLR0915"]
+"upper computer/ui/components.py" = ["ANN001"]
+"upper computer/ui/main_window.py" = ["PLR0915"]

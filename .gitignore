@@ -43,9 +43,10 @@ database-analysis/config.json
 .DS_Store
 Thumbs.db
 
-# 文档（可选）
+# 个人性代理配置（项目权威约束见 git 跟踪的 AGENTS.md）
 CLAUDE.md
 IDENTITY.md
+!AGENTS.md
 
 # Claude Code 个人配置
 .claude/settings.json

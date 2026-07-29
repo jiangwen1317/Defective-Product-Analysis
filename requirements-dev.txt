@@ -1,0 +1,5 @@
+# 仓库级开发/检查依赖（三个子项目共享）
+# 安装命令：.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+pytest>=7.0.0    # 单元测试框架（check.bat 步骤 2-4）
+ruff>=0.16.0     # 静态检查，规则映射见根级 pyproject.toml（check.bat 步骤 1）
