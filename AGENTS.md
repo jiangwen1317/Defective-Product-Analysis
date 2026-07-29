@@ -323,12 +323,16 @@ results = self._device_manager.start_test([1, 3, 5])  # 测试 DUT 1,3,5
 check.bat
 ```
 
-包含两个环节：
+包含三个环节：
 
 1. **ruff 静态检查**：规则配置在根级 `pyproject.toml`，三个子项目共享，
    机械化本文件中的可自动规则：公开函数类型注解（ANN001/ANN201）、
    禁用 `Any`（ANN401）、函数长度上限（PLR0915，语句数 ≤ 50）。
-2. **pytest 套件**：依次运行 `upper computer`、`database-analysis`、
+2. **豁免只减不增断言**：`tools/check_exemption_baseline.py` 统计
+   `pyproject.toml` 存量基线豁免的（文件, 规则码）对数，超过记录的基线
+   即失败；收紧豁免后应同步下调脚本中的 `BASELINE_PAIRS` 并更新
+   `pyproject.toml` 豁免段的违规计数快照。
+3. **pytest 套件**：依次运行 `upper computer`、`database-analysis`、
    `Log-Download` 三个子项目的测试。
 
 约束：

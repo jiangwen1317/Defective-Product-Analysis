@@ -26,10 +26,12 @@ max-statements = 50
 "**/conftest.py" = ["ANN"]
 
 # ---- 存量基线豁免（2026-07-29 引入检查时已存在的 29 处违规，随重构逐步收紧删除）----
-"Log-Download/log_downloader.py" = ["ANN001", "ANN201", "PLR0915"]
-"database-analysis/database.py" = ["ANN201"]
-"database-analysis/gui_app.py" = ["ANN001", "PLR0915"]
-"database-analysis/log_parser.py" = ["PLR0915"]
-"upper computer/router/gateway.py" = ["ANN001", "PLR0915"]
-"upper computer/ui/components.py" = ["ANN001"]
-"upper computer/ui/main_window.py" = ["PLR0915"]
+# 只减不增由 tools/check_exemption_baseline.py 机械断言（按（文件, 规则码）对计数，基线 11）。
+# 每行注释为 2026-07-29 的违规计数快照（ruff --isolated 逐文件统计），合计 29，供收紧时核对。
+"Log-Download/log_downloader.py" = ["ANN001", "ANN201", "PLR0915"]  # 快照: 6 处
+"database-analysis/database.py" = ["ANN201"]                        # 快照: 1 处
+"database-analysis/gui_app.py" = ["ANN001", "PLR0915"]              # 快照: 12 处
+"database-analysis/log_parser.py" = ["PLR0915"]                     # 快照: 2 处
+"upper computer/router/gateway.py" = ["ANN001", "PLR0915"]          # 快照: 4 处
+"upper computer/ui/components.py" = ["ANN001"]                      # 快照: 2 处
+"upper computer/ui/main_window.py" = ["PLR0915"]                    # 快照: 2 处
