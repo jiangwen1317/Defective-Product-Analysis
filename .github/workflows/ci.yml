@@ -1,0 +1,38 @@
+# 远端 CI：推送时复跑与本地门禁 check.bat 完全等价的检查
+# （ruff 静态检查 + 豁免基线只减不增断言 + 三个子项目 pytest）。
+# 实现方式：在 windows runner 上创建仓库根 .venv 后直接调用 check.bat，
+# 使 CI 与本地 pre-commit hook 共享同一事实来源；check.bat 变更时 CI 自动跟随。
+name: CI
+
+on: [push]
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # runner 无桌面会话，PyQt5 测试（QApplication）使用离屏渲染插件
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            upper computer/requirements.txt
+            database-analysis/requirements.txt
+            Log-Download/requirements.txt
+
+      - name: 创建 .venv 并安装依赖（check.bat 硬编码 .venv\Scripts\python.exe）
+        shell: cmd
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements-dev.txt -r "upper computer\requirements.txt" -r database-analysis\requirements.txt -r Log-Download\requirements.txt
+
+      - name: 运行 check.bat（ruff + 豁免基线断言 + 三个子项目 pytest）
+        shell: cmd
+        run: call check.bat
