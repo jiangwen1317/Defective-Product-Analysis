@@ -3,8 +3,8 @@ SQLite 连接管理与数据访问层
 
 提供 DatabaseConnection 上下文管理器，以及 MetricsRepository 封装所有 CRUD 操作。
 """
-import sqlite3
 import logging
+import sqlite3
 from contextlib import contextmanager
 from typing import Optional
 

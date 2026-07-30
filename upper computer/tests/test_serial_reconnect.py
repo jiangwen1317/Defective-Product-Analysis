@@ -7,7 +7,6 @@
 from unittest.mock import Mock, patch
 
 import serial
-
 from adapters.serial_arm_adapter import SerialArmAdapter
 
 

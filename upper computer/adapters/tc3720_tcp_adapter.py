@@ -13,9 +13,10 @@ import threading
 import time
 from typing import Callable
 
+from .reconnect_mixin import ReconnectMixin, close_socket
+
 # 从 tc3720_adapter 导入共享的 TC3720Status
 from .tc3720_adapter import TC3720Status
-from .reconnect_mixin import ReconnectMixin, close_socket
 
 logger = logging.getLogger(__name__)
 

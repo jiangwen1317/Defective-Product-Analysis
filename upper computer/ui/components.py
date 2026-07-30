@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from PyQt5.QtCore import Qt, QEvent, pyqtSignal
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,

@@ -6,9 +6,9 @@ EMMC RTMS 测试日志解析引擎
 
 错误隔离原则：单文件/单行 解析失败不中断整体流程。
 """
+import logging
 import os
 import re
-import logging
 from dataclasses import dataclass, field
 from typing import Optional
 

@@ -11,7 +11,6 @@
 import time
 
 import pytest
-
 from config import get_configured_dut_indices, get_gateway_config, load_config
 from router.gateway import GatewayConfig, PassthroughGateway
 

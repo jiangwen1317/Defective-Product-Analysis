@@ -10,11 +10,10 @@ import logging
 import os
 from typing import Optional
 
+from database import DatabaseConnection, MetricsRepository
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-
-from database import DatabaseConnection, MetricsRepository
 
 logger = logging.getLogger(__name__)
 

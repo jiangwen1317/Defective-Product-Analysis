@@ -24,9 +24,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tomllib
 from collections import Counter
 from pathlib import Path
+
+import tomllib
 
 # 基线豁免对数：2026-07-29 引入检查时为 11 个（文件, 规则码）对（对应 29 处违规）。
 # 收紧豁免（删除规则码或整行条目）后应同步下调该值。

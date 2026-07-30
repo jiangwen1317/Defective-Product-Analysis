@@ -2,13 +2,13 @@
 DeviceManager 设备管理器单元测试。
 """
 
-import pytest
 import threading
 import time
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from router.device_manager import DeviceManager, TestResult
+import pytest
 from adapters import TC3720Status
+from router.device_manager import DeviceManager, TestResult
 
 
 class TestDeviceManagerInit:

@@ -3,7 +3,6 @@ ArmProtocol 协议处理器单元测试。
 """
 
 import pytest
-
 from protocol.arm_protocol import ArmProtocol
 
 

@@ -9,7 +9,6 @@ import os
 
 import pytest
 from openpyxl import load_workbook
-
 from rma_report import RMAReportGenerator
 
 

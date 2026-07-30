@@ -5,7 +5,6 @@ gui_logic 模块单元测试
 ID 解析、绘图模式判定、容量输入解析和容量显示格式化。
 """
 import pytest
-
 from gui_logic import (
     format_capacity_display,
     parse_capacity_input,

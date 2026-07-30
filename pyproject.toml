@@ -3,6 +3,7 @@
 #   - 公开函数必须有类型注解（AGENTS.md 二、三）
 #   - 每个函数不超过 50 行（AGENTS.md 二；以语句数 50 为机械代理指标）
 #   - 禁用 Any（AGENTS.md 三）
+#   - 导入顺序：标准库 → 第三方 → 本地（AGENTS.md 五）
 # 运行方式（仓库根）：.venv\Scripts\python.exe -m ruff check .
 
 [tool.ruff]
@@ -15,6 +16,7 @@ select = [
     "ANN201",  # 公开函数缺少返回值类型注解
     "ANN401",  # 禁用 typing.Any
     "PLR0915", # 函数语句数超限（函数长度上限的机械代理）
+    "I",       # 导入顺序：标准库 → 第三方 → 本地
 ]
 
 [tool.ruff.lint.pylint]

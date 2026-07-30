@@ -30,7 +30,13 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-from config import load_config, get_db_path, get_file_extensions, PROJECT_DIR, DEFAULT_CONFIG_PATH
+from config import (
+    DEFAULT_CONFIG_PATH,
+    PROJECT_DIR,
+    get_db_path,
+    get_file_extensions,
+    load_config,
+)
 from database import DatabaseConnection, MetricsRepository
 from parse_service import ParseService
 from schema import init_database

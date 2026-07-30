@@ -23,6 +23,13 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from adapters import TC3720Status
+from config import (
+    get_configured_dut_indices,
+    get_gateway_config,
+    get_ui_config,
+    load_config,
+)
 from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
@@ -39,8 +46,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from router import ErrorCode, GatewayState, SignalGateway, TransferRecord
+from storage import HistoryStore
 
-from adapters import TC3720Status
 from ui.components import (
     Card,
     ConnectionStatus,
@@ -48,10 +56,7 @@ from ui.components import (
     StatsPanel,
     TestProgressPanel,
 )
-from config import get_configured_dut_indices, get_gateway_config, get_ui_config, load_config
-from router import ErrorCode, GatewayState, SignalGateway, TransferRecord
 from ui.panel_logic import format_board_config_desc, split_checkbox_rows
-from storage import HistoryStore
 from ui.styles import (
     COLOR_ACCENT,
     COLOR_ACCENT_HOVER,

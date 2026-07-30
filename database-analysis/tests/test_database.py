@@ -5,13 +5,11 @@
 以及解析→入库→查询的端到端流程。
 """
 import json
-
-import pytest
 import sqlite3
 
+import pytest
 from database import DatabaseConnection, MetricsRepository
 from schema import init_database
-
 
 # ================================================================
 # Schema 初始化

@@ -6,7 +6,6 @@ ParseService 集成测试
 import os
 
 import pytest
-
 from conftest import LOG_FILE_1, LOG_FILE_2
 from database import DatabaseConnection, MetricsRepository
 from parse_service import ParseService

@@ -22,7 +22,6 @@ import sys
 import threading
 
 import pytest
-
 from adapters import TC3720Status
 
 

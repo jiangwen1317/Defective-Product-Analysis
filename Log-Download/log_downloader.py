@@ -30,7 +30,8 @@ import re
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Set
-from playwright.sync_api import sync_playwright, Locator, Page, Browser
+
+from playwright.sync_api import Browser, Locator, Page, sync_playwright
 
 
 class LoginStatus:

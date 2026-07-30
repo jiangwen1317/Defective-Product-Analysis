@@ -17,7 +17,6 @@ import json
 import os
 
 import pytest
-
 from log_downloader import LogDownloader
 
 

@@ -15,8 +15,8 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
-
 import matplotlib
+
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -27,7 +27,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
-from config import load_config, get_db_path, get_file_extensions, PROJECT_DIR
+from config import PROJECT_DIR, get_db_path, get_file_extensions, load_config
 from database import DatabaseConnection, MetricsRepository
 from gui_logic import (
     format_capacity_display,
@@ -196,7 +196,7 @@ class App(ctk.CTk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _parse_directory(self) -> None:
-        from file_watcher import extract_all_zips, discover_log_files
+        from file_watcher import discover_log_files, extract_all_zips
 
         directory = self._parse_dir_var.get().strip()
         if not directory or not os.path.isdir(directory):

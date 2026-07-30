@@ -6,7 +6,6 @@
 import os
 
 import pytest
-
 from log_parser import (
     LogParser,
     MetricEntry,
@@ -15,7 +14,6 @@ from log_parser import (
     _parse_lines,
     convert_value,
 )
-
 
 # ================================================================
 # convert_value 数值转换

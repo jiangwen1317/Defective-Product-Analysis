@@ -2,19 +2,19 @@
 PassthroughGateway 网关单元测试。
 """
 
-import pytest
 import threading
 import time
-from unittest.mock import Mock, MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
+import pytest
+from adapters import TC3720Status
 from router.gateway import (
-    PassthroughGateway,
+    ErrorCode,
     GatewayConfig,
     GatewayState,
-    ErrorCode,
+    PassthroughGateway,
     TransferRecord,
 )
-from adapters import TC3720Status
 
 
 class TestGatewayConfig:

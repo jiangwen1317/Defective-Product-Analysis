@@ -4,12 +4,12 @@
 测试 BaseArmAdapter 及其子类的功能。
 """
 
-import pytest
 import threading
 import time
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from adapters import ArmAdapter, SerialArmAdapter, BaseArmAdapter, ArmAdapterMode
+import pytest
+from adapters import ArmAdapter, ArmAdapterMode, BaseArmAdapter, SerialArmAdapter
 
 
 class TestBaseArmAdapterInit:

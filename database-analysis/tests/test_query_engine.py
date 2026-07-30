@@ -4,7 +4,6 @@
 覆盖 QueryEngine 的趋势分析（批量查询）、异常检测（样本方差）和日期过滤。
 """
 import pytest
-
 from database import DatabaseConnection, MetricsRepository
 from query_engine import QueryEngine
 from schema import init_database
