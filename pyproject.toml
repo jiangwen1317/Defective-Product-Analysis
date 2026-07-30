@@ -5,6 +5,7 @@
 #   - 禁用 Any（AGENTS.md 三）
 #   - 导入顺序：标准库 → 第三方 → 本地（AGENTS.md 五）
 #   - 保留原始异常链 raise ... from e 等 bugbear 陷阱（AGENTS.md 四）
+#   - 命名规范 snake_case / PascalCase（AGENTS.md 一）
 # 运行方式（仓库根）：.venv\Scripts\python.exe -m ruff check .
 
 [tool.ruff]
@@ -19,7 +20,13 @@ select = [
     "PLR0915", # 函数语句数超限（函数长度上限的机械代理）
     "I",       # 导入顺序：标准库 → 第三方 → 本地
     "B",       # bugbear：含 B904 异常链 raise ... from e、常见陷阱
+    "N",       # pep8-naming：模块/类/函数/变量命名规范
 ]
+
+[tool.ruff.lint.pep8-naming]
+# Qt 框架强制的 camelCase 名称：QWidget 重写方法与 pyqtSignal 类属性，
+# 无法改名，不属于存量基线豁免（per-file-ignores）范围
+extend-ignore-names = ["eventFilter", "closeEvent", "dutClicked"]
 
 [tool.ruff.lint.pylint]
 max-statements = 50
