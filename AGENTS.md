@@ -2,7 +2,7 @@
 
 本文件是随仓库交付的**权威项目约束**，适用于所有编码代理（Claude Code、Qoder 等）
 与人工开发者。个人性配置（身份设定、个人偏好）不在本文件内，保留在被 git 忽略的
-`CLAUDE.md` / `IDENTITY.md` / `.claude/settings.json` 中。
+`CLAUDE.md` / `IDENTITY.md` / `.claude/settings.json` / `.qoder/rules/shenfen.md` 中。
 
 仓库包含三个子项目：
 

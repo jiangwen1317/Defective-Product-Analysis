@@ -50,6 +50,7 @@ from ui.components import (
 )
 from config import get_configured_dut_indices, get_gateway_config, get_ui_config, load_config
 from router import ErrorCode, GatewayState, SignalGateway, TransferRecord
+from ui.panel_logic import format_board_config_desc, split_checkbox_rows
 from storage import HistoryStore
 from ui.styles import (
     COLOR_ACCENT,
@@ -327,57 +328,12 @@ class MainWindow(QMainWindow):
         self._configured_duts = get_configured_dut_indices(self._config)
 
         # 测试说明（紧凑）
-        if self._configured_duts:
-            desc_text = f"已配置 {len(self._configured_duts)} 个板子"
-        else:
-            desc_text = "请在 config.json 中配置 DUT"
-        desc_label = QLabel(desc_text)
+        desc_label = QLabel(format_board_config_desc(len(self._configured_duts)))
         desc_label.setStyleSheet("color: #6b7280; font-size: 11px;")
         layout.addWidget(desc_label)
 
         # 板子复选框 - 紧凑布局
-        self._board_checkboxes: list[QCheckBox] = []
-        checkbox_row1 = QHBoxLayout()
-        checkbox_row1.setSpacing(12)
-        checkbox_row2 = QHBoxLayout()
-        checkbox_row2.setSpacing(12)
-
-        checkbox_style = f"""
-            QCheckBox {{
-                color: {COLOR_TEXT_PRIMARY};
-                font-size: 12px;
-                spacing: 4px;
-            }}
-            QCheckBox::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 3px;
-                border: 1px solid {COLOR_BORDER};
-                background-color: {COLOR_BG_TERTIARY};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {COLOR_ACCENT};
-                border-color: {COLOR_ACCENT};
-            }}
-            QCheckBox::indicator:checked:hover {{
-                background-color: {COLOR_ACCENT_HOVER};
-                border-color: {COLOR_ACCENT_HOVER};
-            }}
-        """
-
-        for i, dut_index in enumerate(self._configured_duts):
-            checkbox = QCheckBox(f"#{dut_index}")
-            checkbox.setChecked(True)
-            checkbox.setStyleSheet(checkbox_style)
-            self._board_checkboxes.append(checkbox)
-            if i < 4:
-                checkbox_row1.addWidget(checkbox)
-            else:
-                checkbox_row2.addWidget(checkbox)
-
-        checkbox_row1.addStretch()
-        layout.addLayout(checkbox_row1)
-        layout.addLayout(checkbox_row2)
+        self._create_board_checkbox_rows(layout)
 
         # 快捷按钮行（紧凑）
         quick_btn_row = QHBoxLayout()
@@ -413,6 +369,53 @@ class MainWindow(QMainWindow):
         layout.addWidget(hint_label)
 
         return card
+
+    def _create_board_checkbox_rows(self, layout: QVBoxLayout) -> None:
+        """创建板子复选框的两行紧凑布局并加入给定布局。"""
+        self._board_checkboxes: list[QCheckBox] = []
+        checkbox_row1 = QHBoxLayout()
+        checkbox_row1.setSpacing(12)
+        checkbox_row2 = QHBoxLayout()
+        checkbox_row2.setSpacing(12)
+
+        checkbox_style = f"""
+            QCheckBox {{
+                color: {COLOR_TEXT_PRIMARY};
+                font-size: 12px;
+                spacing: 4px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border: 1px solid {COLOR_BORDER};
+                background-color: {COLOR_BG_TERTIARY};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLOR_ACCENT};
+                border-color: {COLOR_ACCENT};
+            }}
+            QCheckBox::indicator:checked:hover {{
+                background-color: {COLOR_ACCENT_HOVER};
+                border-color: {COLOR_ACCENT_HOVER};
+            }}
+        """
+
+        first_row, second_row = split_checkbox_rows(self._configured_duts)
+        for row_layout, dut_indices in (
+            (checkbox_row1, first_row),
+            (checkbox_row2, second_row),
+        ):
+            for dut_index in dut_indices:
+                checkbox = QCheckBox(f"#{dut_index}")
+                checkbox.setChecked(True)
+                checkbox.setStyleSheet(checkbox_style)
+                self._board_checkboxes.append(checkbox)
+                row_layout.addWidget(checkbox)
+
+        checkbox_row1.addStretch()
+        layout.addLayout(checkbox_row1)
+        layout.addLayout(checkbox_row2)
 
     def _create_log_card(self) -> QWidget:
         """创建通讯日志卡片。"""
@@ -489,7 +492,26 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)  # 减小卡片间距
 
-        # ===== 顶部区域：连接状态 + DUT状态（水平布局）=====
+        # 顶部区域：连接状态 + DUT状态（水平布局）
+        layout.addWidget(self._create_top_status_area())
+
+        # 中部区域：任务详情 + 告警（合并为一行）
+        layout.addWidget(self._create_middle_task_area())
+
+        # 底部区域：历史统计（弹性占用）
+        stats_card = Card("历史统计")
+        stats_layout = stats_card.content_layout()
+
+        self._stats_panel = StatsPanel()
+        stats_layout.addWidget(self._stats_panel)
+
+        layout.addWidget(stats_card)
+        layout.addStretch(1)  # 剩余空间留白，避免统计卡片被纵向拉伸成空柱
+
+        return panel
+
+    def _create_top_status_area(self) -> QWidget:
+        """创建顶部状态区域（设备连接 + DUT 状态网格）。"""
         top_container = QWidget()
         top_layout = QHBoxLayout(top_container)
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -518,54 +540,53 @@ class MainWindow(QMainWindow):
         dut_layout.addWidget(self._dut_grid_panel)
         top_layout.addWidget(dut_card, 2)  # 弹性比例2（更宽）
 
-        layout.addWidget(top_container)
+        return top_container
 
-        # ===== 中部区域：任务详情 + 告警（合并为一行）=====
+    def _create_middle_task_area(self) -> QWidget:
+        """创建中部区域（任务详情 + 告警合并为一行）。"""
         middle_container = QWidget()
         middle_layout = QHBoxLayout(middle_container)
         middle_layout.setContentsMargins(0, 0, 0, 0)
         middle_layout.setSpacing(8)
 
-        # 当前任务卡片（紧凑）
+        middle_layout.addWidget(self._create_task_detail_card(), 3)  # 弹性比例3
+        middle_layout.addWidget(self._create_alarm_card())
+
+        return middle_container
+
+    def _make_task_field(self, title: str, value_style: str) -> tuple[QVBoxLayout, QLabel]:
+        """创建任务详情中的单个字段列（标题 + 值标签）。"""
+        field_layout = QVBoxLayout()
+        field_layout.setSpacing(2)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #6b7280; font-size: 10px;")
+        value_label = QLabel("-")
+        value_label.setStyleSheet(value_style)
+        field_layout.addWidget(title_label)
+        field_layout.addWidget(value_label)
+        return field_layout, value_label
+
+    def _create_task_detail_card(self) -> Card:
+        """创建任务详情卡片（紧凑布局）。"""
         self._task_card = Card("任务详情")
         task_layout = self._task_card.content_layout()
         task_layout.setSpacing(6)
+
+        accent_style = "color: #3b82f6; font-size: 12px; font-family: monospace; font-weight: 600;"
 
         # 任务信息 - 单行紧凑布局
         task_row1 = QHBoxLayout()
         task_row1.setSpacing(12)
 
-        # Group
-        g_layout = QVBoxLayout()
-        g_layout.setSpacing(2)
-        g_label = QLabel("Group")
-        g_label.setStyleSheet("color: #6b7280; font-size: 10px;")
-        self._task_group_label = QLabel("-")
-        self._task_group_label.setStyleSheet("color: #3b82f6; font-size: 12px; font-family: monospace; font-weight: 600;")
-        g_layout.addWidget(g_label)
-        g_layout.addWidget(self._task_group_label)
+        g_layout, self._task_group_label = self._make_task_field("Group", accent_style)
         task_row1.addLayout(g_layout)
 
-        # Bitmask
-        b_layout = QVBoxLayout()
-        b_layout.setSpacing(2)
-        b_label = QLabel("Bitmask")
-        b_label.setStyleSheet("color: #6b7280; font-size: 10px;")
-        self._task_bitmask_label = QLabel("-")
-        self._task_bitmask_label.setStyleSheet("color: #3b82f6; font-size: 12px; font-family: monospace; font-weight: 600;")
-        b_layout.addWidget(b_label)
-        b_layout.addWidget(self._task_bitmask_label)
+        b_layout, self._task_bitmask_label = self._make_task_field("Bitmask", accent_style)
         task_row1.addLayout(b_layout)
 
-        # ErrorCodes
-        e_layout = QVBoxLayout()
-        e_layout.setSpacing(2)
-        e_label = QLabel("ErrorCodes")
-        e_label.setStyleSheet("color: #6b7280; font-size: 10px;")
-        self._task_errorcodes_label = QLabel("-")
-        self._task_errorcodes_label.setStyleSheet("color: #e8eaed; font-size: 11px; font-family: monospace;")
-        e_layout.addWidget(e_label)
-        e_layout.addWidget(self._task_errorcodes_label)
+        e_layout, self._task_errorcodes_label = self._make_task_field(
+            "ErrorCodes", "color: #e8eaed; font-size: 11px; font-family: monospace;"
+        )
         task_row1.addLayout(e_layout)
 
         task_row1.addStretch()
@@ -575,16 +596,20 @@ class MainWindow(QMainWindow):
         task_row2 = QHBoxLayout()
         task_row2.setSpacing(12)
 
-        d_layout = QVBoxLayout()
-        d_layout.setSpacing(2)
-        d_label = QLabel("耗时")
-        d_label.setStyleSheet("color: #6b7280; font-size: 10px;")
-        self._task_duration_label = QLabel("-")
-        self._task_duration_label.setStyleSheet("color: #e8eaed; font-size: 12px; font-family: monospace;")
-        d_layout.addWidget(d_label)
-        d_layout.addWidget(self._task_duration_label)
+        d_layout, self._task_duration_label = self._make_task_field(
+            "耗时", "color: #e8eaed; font-size: 12px; font-family: monospace;"
+        )
         task_row2.addLayout(d_layout)
 
+        task_row2.addLayout(self._create_status_field())
+
+        task_row2.addStretch()
+        task_layout.addLayout(task_row2)
+
+        return self._task_card
+
+    def _create_status_field(self) -> QVBoxLayout:
+        """创建任务详情中的状态字段列（带背景和 emoji 的状态标签）。"""
         s_layout = QVBoxLayout()
         s_layout.setSpacing(2)
         s_label = QLabel("状态")
@@ -611,14 +636,10 @@ class MainWindow(QMainWindow):
 
         s_layout.addWidget(s_label)
         s_layout.addWidget(self._gw_status_container)
-        task_row2.addLayout(s_layout)
+        return s_layout
 
-        task_row2.addStretch()
-        task_layout.addLayout(task_row2)
-
-        middle_layout.addWidget(self._task_card, 3)  # 弹性比例3
-
-        # 告警卡片（紧凑，仅在有告警时显示）
+    def _create_alarm_card(self) -> Card:
+        """创建告警卡片（紧凑，仅在有告警时显示）。"""
         self._alarm_card = Card("告警")
         self._alarm_layout = self._alarm_card.content_layout()
         self._alarm_layout.setSpacing(6)
@@ -650,21 +671,7 @@ class MainWindow(QMainWindow):
         self._alarm_card.setVisible(False)
         self._alarm_card.setFixedWidth(140)  # 固定宽度，紧凑
 
-        middle_layout.addWidget(self._alarm_card)
-
-        layout.addWidget(middle_container)
-
-        # ===== 底部区域：历史统计（弹性占用）=====
-        stats_card = Card("历史统计")
-        stats_layout = stats_card.content_layout()
-
-        self._stats_panel = StatsPanel()
-        stats_layout.addWidget(self._stats_panel)
-
-        layout.addWidget(stats_card)
-        layout.addStretch(1)  # 剩余空间留白，避免统计卡片被纵向拉伸成空柱
-
-        return panel
+        return self._alarm_card
 
     def _init_gateway(self) -> None:
         """初始化网关实例。"""

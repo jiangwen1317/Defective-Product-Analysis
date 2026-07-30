@@ -30,7 +30,7 @@ import re
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Set
-from playwright.sync_api import sync_playwright, Page, Browser
+from playwright.sync_api import sync_playwright, Locator, Page, Browser
 
 
 class LoginStatus:
@@ -574,7 +574,7 @@ class LogDownloader:
                     continue
         return None
 
-    def _extract_task_id(self, row, row_index: int) -> str:
+    def _extract_task_id(self, row: Locator, row_index: int) -> str:
         """
         从任务行中提取任务 ID。
 
@@ -607,7 +607,7 @@ class LogDownloader:
         # 如果都失败,使用行索引作为 ID
         return f"task_row_{row_index}"
 
-    def _extract_task_name(self, row, row_index: int) -> str:
+    def _extract_task_name(self, row: Locator, row_index: int) -> str:
         """
         从任务行中提取任务名称。
 
@@ -655,8 +655,6 @@ class LogDownloader:
         Returns:
             下载成功返回 True,否则返回 False
         """
-        downloaded_file = None
-
         try:
             task_id = task["id"]
             task_name = task.get("name", task_id)
@@ -675,95 +673,149 @@ class LogDownloader:
             self._close_modals()
 
             # 步骤 2: 勾选复选框（支持 iView 自定义复选框和原生复选框）
-            logging.info(f"勾选任务 {task_id} 的复选框")
-            try:
-                checkbox_found = False
-                for selector in Selectors.CHECKBOX:
-                    checkbox_locator = row.locator(selector)
-                    if checkbox_locator.count() > 0:
-                        checkbox_locator.first.click()
-                        self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
-                        checkbox_found = True
-                        logging.info(f"已勾选复选框 (选择器: {selector})")
-                        break
-                if not checkbox_found:
-                    # 兜底：点击第一列单元格
-                    first_cell_locator = row.locator("td:first-child")
-                    if first_cell_locator.count() > 0:
-                        first_cell_locator.first.click()
-                        self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
-            except Exception as e:
-                logging.warning(f"勾选复选框失败: {e}")
+            self._check_task_checkbox(row, task_id)
 
             # 步骤 3: 右键点击任务行
-            logging.info(f"右键点击任务 {task_id} 的行")
-            try:
-                row.click(button="right")
-                # 首先尝试等待菜单出现
-                try:
-                    self.page.locator(Selectors.DOWNLOAD_MENU).wait_for(
-                        state="visible", timeout=Timeout.MENU_RENDER
-                    )
-                    logging.info("已右键点击,菜单已出现")
-                except Exception:
-                    # 如果等待失败，添加固定等待作为后备
-                    self.page.wait_for_timeout(1000)
-                    logging.debug("菜单等待超时，使用固定等待")
-            except Exception as e:
-                logging.error(f"右键点击失败: {e}")
-                self._save_screenshot(f"right_click_failed_{task_id}")
+            if not self._open_task_context_menu(row, task_id):
                 return False
 
             self._save_screenshot(f"after_right_click_{task_id}")
 
             # 步骤 4: 选择下载日志菜单
-            logging.info("选择下载日志菜单")
-            try:
-                download_menu_locator = self.page.locator(Selectors.DOWNLOAD_MENU)
-
-                if download_menu_locator.count() > 0 and download_menu_locator.first.is_visible():
-                    with self.page.expect_download(timeout=Timeout.DOWNLOAD_WAIT) as download_info:
-                        download_menu_locator.first.click()
-                        logging.info("已点击下载日志菜单,等待下载...")
-
-                    download = download_info.value
-                    original_filename = download.suggested_filename
-                    logging.info(f"捕获到下载事件: {original_filename}")
-
-                    # 生成新文件名
-                    _, original_ext = os.path.splitext(original_filename)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    safe_task_id = self._sanitize_filename(str(task['id']))
-                    new_filename = f"{safe_task_id}_{timestamp}{original_ext}"
-                    new_file_path = self._get_unique_filepath(new_filename)
-
-                    download.save_as(new_file_path)
-                    logging.info(f"文件已保存: {new_file_path}")
-
-                    downloaded_file = new_file_path
-                    self._save_screenshot(f"after_download_click_{task_id}")
-
-                    # 处理确认对话框
-                    self._handle_confirm_dialog()
-
-                    if self.verify_file_integrity(downloaded_file):
-                        logging.info(f"任务 [{task_name}] 下载成功")
-                        return True
-                    else:
-                        logging.error(f"任务 [{task_name}] 下载的文件验证失败")
-                        return False
-                else:
-                    logging.error("未找到下载日志菜单项")
-                    self._save_screenshot(f"no_download_menu_{task_id}")
-                    return False
-            except Exception as e:
-                logging.error(f"选择下载日志菜单失败: {e}")
-                self._save_screenshot(f"download_menu_error_{task_id}")
-                return False
+            return self._download_via_menu(task_id, task_name)
 
         except Exception as e:
             logging.error(f"下载任务 {task.get('id', 'unknown')} 日志失败: {e}")
             self._save_screenshot(f"download_error_{task.get('id', 'unknown')}")
+            return False
+
+    def _check_task_checkbox(self, row: Locator, task_id: str) -> None:
+        """
+        勾选任务行的复选框（支持 iView 自定义复选框和原生复选框）。
+
+        Args:
+            row: 任务行元素
+            task_id: 任务 ID
+        """
+        logging.info(f"勾选任务 {task_id} 的复选框")
+        try:
+            checkbox_found = False
+            for selector in Selectors.CHECKBOX:
+                checkbox_locator = row.locator(selector)
+                if checkbox_locator.count() > 0:
+                    checkbox_locator.first.click()
+                    self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
+                    checkbox_found = True
+                    logging.info(f"已勾选复选框 (选择器: {selector})")
+                    break
+            if not checkbox_found:
+                # 兜底：点击第一列单元格
+                first_cell_locator = row.locator("td:first-child")
+                if first_cell_locator.count() > 0:
+                    first_cell_locator.first.click()
+                    self.page.wait_for_timeout(Timeout.CHECKBOX_UPDATE)
+        except Exception as e:
+            logging.warning(f"勾选复选框失败: {e}")
+
+    def _open_task_context_menu(self, row: Locator, task_id: str) -> bool:
+        """
+        右键点击任务行以弹出上下文菜单。
+
+        Args:
+            row: 任务行元素
+            task_id: 任务 ID
+
+        Returns:
+            右键点击成功返回 True,否则返回 False
+        """
+        logging.info(f"右键点击任务 {task_id} 的行")
+        try:
+            row.click(button="right")
+            # 首先尝试等待菜单出现
+            try:
+                self.page.locator(Selectors.DOWNLOAD_MENU).wait_for(
+                    state="visible", timeout=Timeout.MENU_RENDER
+                )
+                logging.info("已右键点击,菜单已出现")
+            except Exception:
+                # 如果等待失败，添加固定等待作为后备
+                self.page.wait_for_timeout(1000)
+                logging.debug("菜单等待超时，使用固定等待")
+        except Exception as e:
+            logging.error(f"右键点击失败: {e}")
+            self._save_screenshot(f"right_click_failed_{task_id}")
+            return False
+        return True
+
+    def _build_download_filename(
+        self, task_id: str, original_filename: str, timestamp: str
+    ) -> str:
+        """
+        根据任务 ID、时间戳与原始文件扩展名生成下载文件名。
+
+        Args:
+            task_id: 任务 ID
+            original_filename: 服务器建议的原始文件名 (用于保留扩展名)
+            timestamp: 时间戳字符串
+
+        Returns:
+            形如 "<安全任务ID>_<时间戳><原扩展名>" 的文件名
+        """
+        _, original_ext = os.path.splitext(original_filename)
+        safe_task_id = self._sanitize_filename(str(task_id))
+        return f"{safe_task_id}_{timestamp}{original_ext}"
+
+    def _download_via_menu(self, task_id: str, task_name: str) -> bool:
+        """
+        从右键菜单选择"下载日志"并保存、校验下载文件。
+
+        Args:
+            task_id: 任务 ID
+            task_name: 任务名称 (用于日志输出)
+
+        Returns:
+            下载并通过完整性校验返回 True,否则返回 False
+        """
+        logging.info("选择下载日志菜单")
+        try:
+            download_menu_locator = self.page.locator(Selectors.DOWNLOAD_MENU)
+
+            if download_menu_locator.count() > 0 and download_menu_locator.first.is_visible():
+                with self.page.expect_download(timeout=Timeout.DOWNLOAD_WAIT) as download_info:
+                    download_menu_locator.first.click()
+                    logging.info("已点击下载日志菜单,等待下载...")
+
+                download = download_info.value
+                original_filename = download.suggested_filename
+                logging.info(f"捕获到下载事件: {original_filename}")
+
+                # 生成新文件名
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                new_filename = self._build_download_filename(
+                    task_id, original_filename, timestamp
+                )
+                new_file_path = self._get_unique_filepath(new_filename)
+
+                download.save_as(new_file_path)
+                logging.info(f"文件已保存: {new_file_path}")
+
+                self._save_screenshot(f"after_download_click_{task_id}")
+
+                # 处理确认对话框
+                self._handle_confirm_dialog()
+
+                if self.verify_file_integrity(new_file_path):
+                    logging.info(f"任务 [{task_name}] 下载成功")
+                    return True
+                logging.error(f"任务 [{task_name}] 下载的文件验证失败")
+                return False
+
+            logging.error("未找到下载日志菜单项")
+            self._save_screenshot(f"no_download_menu_{task_id}")
+            return False
+        except Exception as e:
+            logging.error(f"选择下载日志菜单失败: {e}")
+            self._save_screenshot(f"download_menu_error_{task_id}")
             return False
 
     def _close_modals(self):
@@ -873,7 +925,7 @@ class LogDownloader:
 
         return downloaded
 
-    def save_downloaded_task(self, task_id: str):
+    def save_downloaded_task(self, task_id: str) -> None:
         """
         保存已下载的任务 ID 到记录文件。
 
@@ -1029,7 +1081,7 @@ class LogDownloader:
 
         return result
 
-    def run_scheduler(self, interval_hours: float = None):
+    def run_scheduler(self, interval_hours: Optional[float] = None) -> None:
         """
         启动定时调度器。
 
@@ -1125,7 +1177,7 @@ class LogDownloader:
             logging.warning(f"保存截图失败: {e}")
 
 
-def main():
+def main() -> None:
     """主函数"""
     import argparse
 

@@ -47,6 +47,7 @@ Thumbs.db
 CLAUDE.md
 IDENTITY.md
 !AGENTS.md
+.qoder/rules/shenfen.md
 
 # Claude Code 个人配置
 .claude/settings.json

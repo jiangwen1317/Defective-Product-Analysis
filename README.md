@@ -38,6 +38,9 @@
    git config core.hooksPath githooks
    ```
 
+   注意：`check.bat` 开头会自检 `git config core.hooksPath` 是否为 `githooks`，
+   未启用时直接以非零码失败并提示执行上述命令，因此本步必须先于第 5 步完成。
+
 5. 运行检查入口验证环境：
 
    ```bat

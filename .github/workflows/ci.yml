@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # check.bat 开头会自检 core.hooksPath 是否为 githooks，未配置则硬失败；
+      # CI 不执行 git commit，hook 不会实际触发，此步仅使自检通过并与本地环境一致
+      - name: 启用 pre-commit hooksPath
+        run: git config core.hooksPath githooks
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

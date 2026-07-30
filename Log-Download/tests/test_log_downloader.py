@@ -6,6 +6,7 @@
 - 去重记录的读写 (save_downloaded_task / load_downloaded_tasks)
 - 配置加载与校验 (_load_config / _validate_config)
 - 唯一文件路径生成 (_get_unique_filepath)
+- 下载文件名生成 (_build_download_filename)
 - 待下载任务过滤 (filter_pending_tasks)
 
 超出本次范围：登录、页面扫描、右键下载等浏览器端到端流程（依赖 Playwright
@@ -218,6 +219,38 @@ class TestUniqueFilepath:
 
         result = downloader._get_unique_filepath("report.log")
         assert result.replace("\\", "/").endswith("report_1.log")
+
+
+class TestBuildDownloadFilename:
+    """下载文件名生成测试。"""
+
+    def test_preserves_original_extension(self, downloader):
+        """生成的文件名应保留原始文件的扩展名。"""
+        result = downloader._build_download_filename(
+            "316235", "server_log.zip", "20260730_120000"
+        )
+        assert result == "316235_20260730_120000.zip"
+
+    def test_no_extension_when_original_has_none(self, downloader):
+        """原始文件名无扩展名时生成结果也无扩展名。"""
+        result = downloader._build_download_filename(
+            "316235", "serverlog", "20260730_120000"
+        )
+        assert result == "316235_20260730_120000"
+
+    def test_multi_dot_filename_keeps_last_extension(self, downloader):
+        """多点号文件名只保留最后一段扩展名。"""
+        result = downloader._build_download_filename(
+            "7", "a.b.tar.gz", "20260730_120000"
+        )
+        assert result == "7_20260730_120000.gz"
+
+    def test_illegal_chars_in_task_id_sanitized(self, downloader):
+        """任务 ID 中的非法字符应被清洗为下划线。"""
+        result = downloader._build_download_filename(
+            "a/b:c", "log.txt", "20260730_120000"
+        )
+        assert result == "a_b_c_20260730_120000.txt"
 
 
 class TestFilterPendingTasks:
