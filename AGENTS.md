@@ -342,3 +342,21 @@ check.bat
   修复存量违规后应同步删除对应豁免条目
 - 禁止为绕过检查随意添加 `# noqa` 或扩大豁免范围
 
+### 机械触发点（pre-commit hook）
+
+检查由版本化的 `githooks/pre-commit` 在每次 `git commit` 时强制触发：
+hook 调用仓库根 `check.bat`，任一环节失败即以非零码拦截提交，
+并向 `.git/check-audit.log` 追加一条审计记录（时间、HEAD、退出码）。
+
+克隆仓库后需一次性启用（在仓库根执行）：
+
+```bat
+git config core.hooksPath githooks
+```
+
+约束：
+
+- hook 只负责触发与审计，不得在其中增删或跳过 `check.bat` 的检查环节
+- 禁止使用 `git commit --no-verify` 绕过检查
+- `githooks/` 下的 sh 脚本必须保持 LF 行尾（由 `.gitattributes` 固定）
+
