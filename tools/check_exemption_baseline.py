@@ -4,7 +4,8 @@
 按（文件, 规则码）对计数，与记录的基线数比较：
 
 - 条目数增加：以非零码退出，禁止提交（AGENTS.md 十三：豁免只减不增）；
-- 条目数减少：提示同步下调本文件中的 BASELINE_PAIRS 常量；
+- 条目数减少：同样以非零码退出，要求同步下调本文件中的 BASELINE_PAIRS 常量
+  并更新 pyproject.toml 豁免段的违规计数快照，消除双账漂移窗口；
 - 条目数相等：通过。
 
 由 check.bat 调用；也可在仓库根手动运行：
@@ -58,7 +59,7 @@ def main() -> int:
     """执行基线断言，返回进程退出码。
 
     Returns:
-        0 表示通过；1 表示豁免条目数超过基线。
+        0 表示通过；1 表示豁免条目数与基线不一致（超过或低于）。
     """
     exemptions = load_exemptions(PYPROJECT_PATH)
     current_pairs = sum(len(rules) for rules in exemptions.values())
@@ -75,11 +76,11 @@ def main() -> int:
 
     if current_pairs < BASELINE_PAIRS:
         print(
-            f"[提示] 存量基线豁免对数已降至 {current_pairs}（基线 {BASELINE_PAIRS}），"
-            f"请同步下调 tools/check_exemption_baseline.py 中的 BASELINE_PAIRS，"
-            f"并更新 pyproject.toml 豁免段的违规计数快照。"
+            f"[FAIL] 存量基线豁免对数已降至 {current_pairs}（基线 {BASELINE_PAIRS}），"
+            f"基线记录已过期。请同步下调 tools/check_exemption_baseline.py 中的 "
+            f"BASELINE_PAIRS，并更新 pyproject.toml 豁免段的违规计数快照。"
         )
-        return 0
+        return 1
 
     print(f"[OK] 存量基线豁免对数 {current_pairs} 与基线一致。")
     return 0
