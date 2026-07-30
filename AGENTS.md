@@ -18,7 +18,8 @@
 
 | 类型 | 规范 | 示例 |
 |------|------|------|
-| 模块/类 | PascalCase | `RmaReportGenerator`, `query_engine.py` |
+| 模块/文件名 | snake_case | `query_engine.py` |
+| 类 | PascalCase | `RmaReportGenerator` |
 | 函数/变量/常量 | snake_case | `get_defect_stats()`, `MAX_RETRY` |
 | 私有成员 | `_snake_case` | `_validate_schema()` |
 
@@ -359,4 +360,41 @@ git config core.hooksPath githooks
 - hook 只负责触发与审计，不得在其中增删或跳过 `check.bat` 的检查环节
 - 禁止使用 `git commit --no-verify` 绕过检查
 - `githooks/` 下的 sh 脚本必须保持 LF 行尾（由 `.gitattributes` 固定）
+
+## 十四、分批修复循环
+
+当一次任务包含 2 个及以上同类修复项（如批量修复 ruff 违规、收紧
+`pyproject.toml` 存量豁免、批量缺陷修复），预计需要多轮「修改→验证」
+往返时，必须按本节循环执行，禁止一次性大改后再整体验证。
+
+### 有序步骤
+
+1. **切批**：列出全部待修项，按子项目或规则码分组切批；
+   一批的改动必须可在单次提交内完整审查。
+2. **修一批**：只改当前批次范围内的内容，遵循第十一节重构准则。
+3. **聚焦检查**：`.venv\Scripts\python.exe -m ruff check <改动路径>`；
+   涉及行为的改动加跑对应子项目测试：
+   `.venv\Scripts\python.exe -m pytest "<子项目>" -q`。
+4. **豁免收紧联动**：若本批删除了豁免条目，同步下调
+   `tools/check_exemption_baseline.py` 的 `BASELINE_PAIRS` 与
+   `pyproject.toml` 快照，并运行该脚本确认通过。
+5. **留痕**：每批通过后立即提交（pre-commit hook 自动运行全量
+   `check.bat` 并向 `.git/check-audit.log` 追加审计记录）。
+6. **推进**：回到第 2 步处理下一批。
+7. **收尾**：全部批次完成后，在仓库根运行一次完整 `check.bat`
+   确认整体通过。
+
+### 验证器
+
+- 批内：第 3 步的聚焦 ruff / pytest 命令
+- 批间：pre-commit 强制的全量 `check.bat`
+- 收尾：仓库根全量 `check.bat`
+
+### 停止规则
+
+- 同一批聚焦检查连续 2 次失败且原因不明 → 停止该批，向用户报告
+  失败输出；禁止通过添加 `# noqa` 或扩大豁免绕过
+- 修复引发计划外的公开 API / 行为变化 → 停止并向用户确认
+  （第十一节禁止项）
+- 全部批次完成且 `check.bat` 通过 → 循环结束
 
