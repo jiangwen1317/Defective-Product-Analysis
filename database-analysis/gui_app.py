@@ -29,6 +29,12 @@ if _SCRIPT_DIR not in sys.path:
 
 from config import load_config, get_db_path, get_file_extensions, PROJECT_DIR
 from database import DatabaseConnection, MetricsRepository
+from gui_logic import (
+    format_capacity_display,
+    parse_capacity_input,
+    parse_record_ids,
+    resolve_draw_mode,
+)
 from parse_service import ParseService
 from schema import init_database
 
@@ -368,19 +374,7 @@ class App(ctk.CTk):
         repo = self._repo
 
         # 解析容量值（支持 MB 和扇区数两种格式）
-        capacity_mb = None
-        capacity_sectors = None
-        cap_str = self._q_capacity.get().strip()
-        if cap_str:
-            try:
-                cap_val = int(cap_str)
-                # 扇区数通常 > 1000000，MB 值通常 < 1000000
-                if cap_val > 1_000_000:
-                    capacity_sectors = cap_val
-                else:
-                    capacity_mb = cap_val
-            except ValueError:
-                pass
+        capacity_mb, capacity_sectors = parse_capacity_input(self._q_capacity.get())
 
         with self._db.connect() as conn:
             summaries = repo.get_summaries(
@@ -424,11 +418,7 @@ class App(ctk.CTk):
                     continue
 
                 # 容量显示：优先 MB，其次扇区
-                cap_display = ""
-                if s.get("capacity_mb"):
-                    cap_display = f"{s['capacity_mb']} MB"
-                elif s.get("capacity_sectors"):
-                    cap_display = f"{s['capacity_sectors']} Sec"
+                cap_display = format_capacity_display(s)
 
                 self._query_tree.insert("", "end", values=(
                     s["id"],
@@ -581,26 +571,13 @@ class App(ctk.CTk):
         self._chart_toolbar.update()
 
     def _parse_ids(self, raw: str) -> list[int]:
-        """解析逗号分隔的 ID 字符串。"""
-        ids: list[int] = []
-        for part in raw.replace("，", ",").split(","):
-            part = part.strip()
-            if part.isdigit():
-                ids.append(int(part))
-        return ids
+        """解析逗号分隔的 ID 字符串（委托 gui_logic.parse_record_ids）。"""
+        return parse_record_ids(raw)
 
     @staticmethod
     def _resolve_draw_mode(chart_type: str, has_indexed: bool, multi: bool) -> str:
-        """确定实际绘图模式。"""
-        if chart_type == "自动":
-            if has_indexed and multi:
-                return "line"
-            return "bar"
-        type_map = {
-            "折线图": "line", "柱状图": "bar", "散点图": "scatter",
-            "阶梯图": "step", "面积图": "area",
-        }
-        return type_map.get(chart_type, "line")
+        """确定实际绘图模式（委托 gui_logic.resolve_draw_mode）。"""
+        return resolve_draw_mode(chart_type, has_indexed, multi)
 
     def _plot_indexed_series(self, ax, xs, ys, color, label, draw_mode, max_v, avg_v, multi, idx, total_recs):
         """绘制单条索引序列数据。"""
