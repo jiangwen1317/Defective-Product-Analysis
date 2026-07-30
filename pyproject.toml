@@ -4,6 +4,7 @@
 #   - 每个函数不超过 50 行（AGENTS.md 二；以语句数 50 为机械代理指标）
 #   - 禁用 Any（AGENTS.md 三）
 #   - 导入顺序：标准库 → 第三方 → 本地（AGENTS.md 五）
+#   - 保留原始异常链 raise ... from e 等 bugbear 陷阱（AGENTS.md 四）
 # 运行方式（仓库根）：.venv\Scripts\python.exe -m ruff check .
 
 [tool.ruff]
@@ -17,6 +18,7 @@ select = [
     "ANN401",  # 禁用 typing.Any
     "PLR0915", # 函数语句数超限（函数长度上限的机械代理）
     "I",       # 导入顺序：标准库 → 第三方 → 本地
+    "B",       # bugbear：含 B904 异常链 raise ... from e、常见陷阱
 ]
 
 [tool.ruff.lint.pylint]

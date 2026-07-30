@@ -185,7 +185,7 @@ class LogDownloader:
             raise ValueError(
                 f"配置文件格式错误: {config_abs_path}\n"
                 f"JSON 解析失败: {e}"
-            )
+            ) from e
 
         # 验证必需的配置字段
         self._validate_config(config)

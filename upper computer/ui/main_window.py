@@ -978,7 +978,13 @@ class MainWindow(QMainWindow):
         Returns:
             被勾选的 DUT 编号列表（如配置 [3, 5] 且全勾选时返回 [3, 5]）。
         """
-        return [dut for dut, is_checked in zip(configured_duts, checked) if is_checked]
+        # strict=False：调用方保证两列表等长（复选框按 _configured_duts 创建），
+        # 显式声明以保持行为不变
+        return [
+            dut
+            for dut, is_checked in zip(configured_duts, checked, strict=False)
+            if is_checked
+        ]
 
     def _on_select_all_boards(self) -> None:
         """全选所有已配置的板子。"""
