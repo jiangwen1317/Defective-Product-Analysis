@@ -1,6 +1,6 @@
 #!/bin/sh
 # pre-commit：提交前机械触发点（AGENTS.md 第十三节）
-# 强制运行仓库根 check.bat，五步检查任一失败即拦截提交。
+# 强制运行仓库根 check.bat（hooksPath 自检 + 六步检查），任一环节失败即拦截提交。
 # 启用方式（一次性，在仓库根执行）：git config core.hooksPath githooks
 # 每次执行追加审计记录到 .git/check-audit.log（时间、HEAD、退出码）。
 

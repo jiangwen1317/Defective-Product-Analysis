@@ -8,25 +8,9 @@ alwaysApply: true
 
 ## 触发时机
 
-任何修复/改动类任务（修改了仓库内 `.py` 文件或 `pyproject.toml`）在收尾前，必须机械执行以下聚焦检查，不得以"改动很小"或"已人工确认"为由跳过。
+任何修复/改动类任务（修改了仓库内 `.py` 文件或 `pyproject.toml`）在收尾前，必须机械执行 AGENTS.md 第十四节第 3 步定义的聚焦检查（ruff 聚焦检查所有代码改动必跑；涉及行为的改动加跑改动所属子项目的 pytest），不得以"改动很小"或"已人工确认"为由跳过。具体命令形式以 AGENTS.md 第十四节第 3 步为准，本文件不再重复维护命令副本。
 
-## 必须执行的命令
-
-1. **ruff 聚焦检查**（所有代码改动必跑）：
-
-   ```
-   .venv\Scripts\python.exe -m ruff check <改动路径>
-   ```
-
-   `<改动路径>` 为本次任务实际修改的文件或目录列表。
-
-2. **子项目 pytest**（涉及行为的改动加跑）：
-
-   ```
-   .venv\Scripts\python.exe -m pytest "<子项目>" -q
-   ```
-
-   `<子项目>` 为改动所属子项目根目录（`upper computer` / `database-analysis` / `Log-Download`）。仅注释、docstring、文档类改动可免跑 pytest，但需在收尾说明中声明。
+仅注释、docstring、文档类改动可免跑 pytest，但需在收尾说明中声明。
 
 ## 留痕要求
 
