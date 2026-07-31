@@ -37,12 +37,12 @@ max-statements = 50
 "**/conftest.py" = ["ANN"]
 
 # ---- 存量基线豁免（2026-07-29 引入检查时已存在的违规，随重构逐步收紧删除）----
-# 只减不增由 tools/check_exemption_baseline.py 机械断言：对数（基线 7）与每对违规处数
+# 只减不增由 tools/check_exemption_baseline.py 机械断言：对数（基线 6）与每对违规处数
 # （BASELINE_VIOLATIONS 快照）双向比对，超过或低于均失败。
-# 每行注释为逐规则违规处数快照（ruff check --isolated 机械核对，合计 21），
+# 每行注释为逐规则违规处数快照（ruff check --isolated 机械核对，合计 10），
 # 须与脚本中 BASELINE_VIOLATIONS 保持一致。
 "database-analysis/database.py" = ["ANN201"]                        # 快照: ANN201=1
-"database-analysis/gui_app.py" = ["ANN001", "PLR0915"]              # 快照: ANN001=11, PLR0915=1
+"database-analysis/gui_app.py" = ["PLR0915"]                        # 快照: PLR0915=1
 "database-analysis/log_parser.py" = ["PLR0915"]                     # 快照: PLR0915=2
 "upper computer/router/gateway.py" = ["ANN001", "PLR0915"]          # 快照: ANN001=3, PLR0915=1
 "upper computer/ui/components.py" = ["ANN001"]                      # 快照: ANN001=2

@@ -1,10 +1,10 @@
-# 远端 CI：推送时复跑与本地门禁 check.bat 完全等价的检查
+# 远端 CI：push 与 pull_request 时复跑与本地门禁 check.bat 完全等价的检查
 # （ruff 静态检查 + 豁免基线只减不增断言 + 三个子项目 pytest）。
 # 实现方式：在 windows runner 上创建仓库根 .venv 后直接调用 check.bat，
 # 使 CI 与本地 pre-commit hook 共享同一事实来源；check.bat 变更时 CI 自动跟随。
 name: CI
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   check:

@@ -31,14 +31,13 @@ import tomllib
 
 # 基线豁免对数：2026-07-29 引入检查时为 11 个（文件, 规则码）对（对应 29 处违规）。
 # 收紧豁免（删除规则码或整行条目）后应同步下调该值。
-BASELINE_PAIRS = 7
+BASELINE_PAIRS = 6
 
 # 每个豁免（文件, 规则码）对的违规处数快照（ruff check --isolated 机械核对，
-# 合计 21）。修复豁免文件内的违规后应同步下调对应条目，并更新
+# 合计 10）。修复豁免文件内的违规后应同步下调对应条目，并更新
 # pyproject.toml 豁免段的快照注释；降至 0 后应删除豁免条目并下调 BASELINE_PAIRS。
 BASELINE_VIOLATIONS: dict[tuple[str, str], int] = {
     ("database-analysis/database.py", "ANN201"): 1,
-    ("database-analysis/gui_app.py", "ANN001"): 11,
     ("database-analysis/gui_app.py", "PLR0915"): 1,
     ("database-analysis/log_parser.py", "PLR0915"): 2,
     ("upper computer/router/gateway.py", "ANN001"): 3,

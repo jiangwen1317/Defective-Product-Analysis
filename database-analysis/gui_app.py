@@ -19,6 +19,7 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 
@@ -579,7 +580,10 @@ class App(ctk.CTk):
         """确定实际绘图模式（委托 gui_logic.resolve_draw_mode）。"""
         return resolve_draw_mode(chart_type, has_indexed, multi)
 
-    def _plot_indexed_series(self, ax, xs, ys, color, label, draw_mode, max_v, avg_v, multi, idx, total_recs):
+    def _plot_indexed_series(self, ax: Axes, xs: list[int], ys: list[float],
+                             color: str, label: str, draw_mode: str,
+                             max_v: float, avg_v: float, multi: bool,
+                             idx: int, total_recs: int) -> None:
         """绘制单条索引序列数据。"""
         if draw_mode == "line":
             ax.plot(xs, ys, color=color, linewidth=1.2, alpha=0.85, label=label)
